@@ -1,0 +1,64 @@
+#!/bin/bash
+# ramblr-call-heartbeat (macOS): tell Ramblr "a call is live here" so the room mic treats the caller's voice coming
+# out of this Mac's speakers as a person, not TV. One check per run; launchd runs it every 20 s
+# (clients/com.nixfred.ramblr-call.plist). Sends nothing when no call is live; call mode on the server ends on its
+# own when the heartbeats stop (TTL 90 s).
+#   Key:   a line setting RAMBLR_CALL_KEY in ~/.config/ramblr/secrets.env (file 600), same value as on the server.
+#   URL:   RAMBLR_CALL_URL in ~/.config/ramblr/call.env, e.g. http://<server tailnet IP>:8783/call (the voice router's
+#          tailnet listener; plain HTTP inside WireGuard). Anything that is not a tailnet address is refused.
+#   Check: ramblr-call-heartbeat --check   (prints what it detects, sends nothing)
+# Detection: Zoom = its in-meeting helper CptHost is running. Teams, Meet, FaceTime or any browser call = the default
+# microphone is in use (CoreAudio "running somewhere", via Homebrew python3 if present) while one of those apps runs.
+set -uo pipefail
+CONF="$HOME/.config/ramblr"
+[ -r "$CONF/call.env" ] && . "$CONF/call.env"
+URL="${RAMBLR_CALL_URL:-}"
+KEYFILE="${RAMBLR_KEY_FILE:-$CONF/secrets.env}"
+TTL="${RAMBLR_CALL_TTL:-90}"
+
+mic_in_use() {      # 0 if the default input device is running for any process
+  local py=""
+  for p in /opt/homebrew/bin/python3 /usr/local/bin/python3; do [ -x "$p" ] && py="$p" && break; done
+  [ -n "$py" ] || return 2                                  # never touch /usr/bin/python3 (it can pop an install dialog)
+  "$py" - <<'PY'
+import ctypes, ctypes.util, struct, sys
+ca = ctypes.CDLL(ctypes.util.find_library("CoreAudio"))
+class Addr(ctypes.Structure):
+    _fields_ = [("sel", ctypes.c_uint32), ("scope", ctypes.c_uint32), ("elem", ctypes.c_uint32)]
+def fourcc(s): return struct.unpack(">I", s.encode())[0]
+def get_u32(obj, sel):
+    a = Addr(fourcc(sel), fourcc("glob"), 0); v = ctypes.c_uint32(0); n = ctypes.c_uint32(4)
+    err = ca.AudioObjectGetPropertyData(ctypes.c_uint32(obj), ctypes.byref(a), 0, None, ctypes.byref(n), ctypes.byref(v))
+    return None if err else v.value
+dev = get_u32(1, "dIn ")                       # kAudioSystemObject, kAudioHardwarePropertyDefaultInputDevice
+running = get_u32(dev, "gone") if dev else None   # kAudioDevicePropertyDeviceIsRunningSomewhere
+sys.exit(0 if running else 1)
+PY
+}
+
+detect() {          # prints the app holding a call, or nothing
+  if pgrep -xq CptHost; then echo zoom; return; fi
+  local app=""
+  for p in "zoom.us" "MSTeams" "Microsoft Teams" "Webex" "Slack" "Discord" "FaceTime" "Google Chrome" "Brave Browser" "Arc" "Safari" "Firefox" "Microsoft Edge"; do
+    if pgrep -xq "$p"; then app="$p"; break; fi
+  done
+  [ -n "$app" ] || return
+  mic_in_use && echo "$app"
+}
+
+app="$(detect)"
+if [ "${1:-}" = "--check" ]; then
+  mic_in_use; m=$?; echo "call: ${app:-none} | mic in use: $([ $m = 0 ] && echo yes || ([ $m = 2 ] && echo 'unknown (no Homebrew python3)' || echo no)) | url: ${URL:-unset}"
+  exit 0
+fi
+[ -n "$app" ] || exit 0
+case "$URL" in
+  http://100.*:*/call|https://*.ts.net/call|https://*.ts.net:*/call|http://*.ts.net:*/call) ;;
+  *) echo "ramblr-call-heartbeat: refusing URL '${URL}' (tailnet only)" >&2; exit 2 ;;
+esac
+[ -r "$KEYFILE" ] && [ "$(stat -f %Lp "$KEYFILE" 2>/dev/null || stat -c %a "$KEYFILE")" = 600 ] || { echo "ramblr-call-heartbeat: $KEYFILE missing or not chmod 600" >&2; exit 2; }
+key="$(sed -n 's/^RAMBLR_CALL_KEY=//p' "$KEYFILE" | head -1 | tr -d '\r\n')"
+[ -n "$key" ] || { echo "ramblr-call-heartbeat: no RAMBLR_CALL_KEY line in $KEYFILE" >&2; exit 2; }
+body="$(printf '{"ttl": %s, "app": "%s"}' "$TTL" "$(printf %s "$app" | tr -dc 'A-Za-z0-9 ._-')")"
+# the key goes to curl through a file descriptor, never on the command line (ps cannot see it)
+curl -fsS -m 8 -K <(printf 'header = "Authorization: Bearer %s"\n' "$key") -H 'Content-Type: application/json' -d "$body" "$URL" >/dev/null

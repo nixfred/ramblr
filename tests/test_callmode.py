@@ -69,6 +69,14 @@ def test_record_extends_and_during(env):
     assert c.during(d, T + 10, T + 12) and c.during(d, T + 201, T + 202) and not c.during(d, T + 100, T + 150)
 
 
+def test_retroactive_record_moves_the_start_back(env):
+    c, d = env["calls"], env["db"]
+    tick = c.record(d, T + 2000, T + 2005, "call switch", "manual")                        # capture's first tick after "on"
+    assert c.record(d, T, T + 2005, "call switch", "manual") == tick                         # the earlier window, recorded later
+    r = d.execute("SELECT t0, t1 FROM calls WHERE id=?", (tick,)).fetchone()
+    assert (r["t0"], r["t1"]) == (T, T + 2005) and c.during(d, T + 10, T + 20)
+
+
 def test_call_switch_expires(env, monkeypatch):
     from ramblr import ctl
     importlib.reload(ctl)
@@ -189,3 +197,129 @@ def test_picker_guards_repeat_clicks():
     body = s[i:s.index("let reviewTimer", i)]
     assert "if(busy)return;busy=true;" in body and "b.disabled=true" in body and "'saving…'" in body
     assert "busy=false;btns.forEach(b=>b.disabled=false)" in body                            # a failed save re-enables
+
+
+# --- round 2: site switch, heartbeat, voiceprint safety ------------------------------------------------------------
+
+def test_call_status_signals_and_heartbeat(env):
+    c, d = env["calls"], env["db"]
+    assert c.status(d)["live"] is False
+    cid, ttl = c.heartbeat(d, "zoom", 9999)
+    assert ttl == 180.0                                                                       # capped
+    s = c.status(d)
+    assert s["live"] and s["signals"] == ["heartbeat"] and s["heartbeat_app"] == "zoom"
+    assert c.during(d, time.time() + 10, time.time() + 20)                                   # covers the next lines
+    env["state"].update(by="t", call_until=time.time() + 3600)
+    assert c.status(d)["signals"] == ["switch", "heartbeat"]
+    env["dbm"].set_meta(d, "capture_call", "brave")
+    assert c.status(d)["signals"] == ["switch", "heartbeat", "gus"]
+
+
+def test_router_call_endpoint_needs_its_own_key(env, tmp_path, monkeypatch):
+    monkeypatch.setenv("RAMBLR_CALL_KEY", "call-test-key")
+    monkeypatch.setenv("RAMBLR_VOICE_ROUTER_KEY", "router-test-key")
+    from ramblr import config, router
+    importlib.reload(config); importlib.reload(router)
+    from fastapi.testclient import TestClient
+    cl = TestClient(router.make_app(tmp_path / "r.db"))
+    assert cl.post("/call", json={"ttl": 60, "app": "zoom"}).status_code == 401
+    assert cl.post("/call", json={"ttl": 60}, headers={"Authorization": "Bearer router-test-key"}).status_code == 401   # not the router key
+    r = cl.post("/call", json={"ttl": 60, "app": "zoom"}, headers={"Authorization": "Bearer call-test-key"})
+    assert r.status_code == 200 and r.json()["ttl"] == 60
+    assert env["calls"].status(env["dbm"].connect(config.DB_PATH))["heartbeat_app"] == "zoom"
+
+
+def test_web_call_switch(env, monkeypatch):
+    from ramblr import config, web
+    importlib.reload(web)
+    from fastapi.testclient import TestClient
+    cl = TestClient(web.app)
+    r = cl.post("/api/call", json={"on": True}).json()
+    assert r["live"] and r["signals"] == ["switch"]
+    assert abs(r["switch_until"] - (time.time() + config.CALL_SWITCH_HOURS * 3600)) < 60     # holds; 4 h safety net
+    assert cl.get("/api/status").json()["call"]["live"] is True
+    assert cl.post("/api/call", json={"on": False}).json()["live"] is False
+
+
+def vec(seed, base=None, mix=0.0):
+    rng = np.random.default_rng(seed)
+    v = rng.normal(size=256)
+    v /= np.linalg.norm(v)                            # unit noise, so `mix` really is the share of noise
+    if base is not None:
+        v = (1 - mix) * base + mix * v
+    return (v / np.linalg.norm(v)).astype(np.float32)
+
+
+def voiced(env, t, spk, v, manual=0):
+    sid = line(env, t, 4.0, spk)
+    d, dbm = env["db"], env["dbm"]
+    e = d.execute("INSERT INTO embeddings(segment_id,dim,vec,model) VALUES(?,?,?,?)", (sid, len(v), dbm.vec_to_blob(v), "t")).lastrowid
+    d.execute("UPDATE segments SET emb_id=?, manual=? WHERE id=?", (e, manual, sid))
+    return sid, e
+
+
+def test_thin_named_print_never_names_on_its_own(env):
+    from ramblr import config
+    d, dbm, dz = env["db"], env["dbm"], env["diarize"]
+    a = vec(1)
+    person = dbm.new_speaker(d, "Sam", 1)
+    for i in range(config.SPK_NAMED_MIN_N - 1):                                              # 7 samples: thin
+        _, e = voiced(env, T + i, person, vec(100 + i, a, 0.05), manual=1)
+        dbm.add_to_voiceprint(d, person, e, dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e,)).fetchone()[0]))
+    sid, e = voiced(env, T + 50, None, vec(200, a, 0.02))
+    v = dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e,)).fetchone()[0])
+    cl, sim = dz.decide(d, sid, 4.0, v, e, learn=False)
+    assert cl != person and sim > 0.95                                                       # very close, but the print is thin
+    _, e8 = voiced(env, T + 60, person, vec(300, a, 0.05), manual=1)
+    dbm.add_to_voiceprint(d, person, e8, dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e8,)).fetchone()[0]))
+    cl, _ = dz.decide(d, sid, 4.0, v, e, learn=False)
+    assert cl == person                                                                      # 8 samples: names it
+
+
+def test_ambiguous_manual_sample_counts_half_and_is_flagged(env):
+    from ramblr import config
+    d, dbm, spk = env["db"], env["dbm"], env["spk"]
+    a, b = vec(1), vec(2)
+    sam, jordan = dbm.new_speaker(d, "Sam", 1), dbm.new_speaker(d, "Jordan", 1)
+    for i in range(3):
+        for who, base in ((sam, a), (jordan, b)):
+            _, e = voiced(env, T + i * 10 + (who == jordan), who, vec(10 * who + i, base, 0.1), manual=1)
+            dbm.add_to_voiceprint(d, who, e, dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e,)).fetchone()[0]))
+    clear, _ = voiced(env, T + 100, None, vec(50, a, 0.1))
+    mixed, _ = voiced(env, T + 110, None, (a + b) / np.linalg.norm(a + b))                   # sounds like both
+    spk.reassign(d, clear, speaker_id=sam, who="t", propagate=False)
+    spk.reassign(d, mixed, speaker_id=sam, who="t", propagate=False)
+    w = {r["segment_id"]: (r["weight"], r["ambiguous"]) for r in d.execute("SELECT segment_id, weight, ambiguous FROM embeddings")}
+    assert w[clear] == (config.MANUAL_WEIGHT, 0)
+    assert w[mixed] == (config.AMBIGUOUS_WEIGHT, 1)
+    assert d.execute("SELECT speaker_id FROM segments WHERE id=?", (mixed,)).fetchone()[0] == sam   # Fred's word still wins
+    from ramblr import web
+    importlib.reload(web)
+    p = web.person_core(d, d.execute("SELECT * FROM speakers WHERE id=?", (sam,)).fetchone())
+    assert [x["segment_id"] for x in p["ambiguous_samples"]] == [mixed]
+
+
+def test_merge_suggestion_one_click(env):
+    from ramblr import config
+    d, dbm, spk = env["db"], env["dbm"], env["spk"]
+    a, b = vec(1), vec(2)
+    sam, jordan = dbm.new_speaker(d, "Sam", 1), dbm.new_speaker(d, "Jordan", 1)
+    for who, base in ((sam, a), (jordan, b)):
+        _, e = voiced(env, T + who, who, vec(who, base, 0.1), manual=1)
+        dbm.add_to_voiceprint(d, who, e, dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e,)).fetchone()[0]))
+    cl = dbm.new_speaker(d)                                                                  # "Speaker N": really Jordan
+    for i in range(config.MERGE_MIN_LINES):
+        _, e = voiced(env, T + 100 + i * 5, cl, vec(500 + i, b, 0.15))
+        dbm.add_to_voiceprint(d, cl, e, dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e,)).fetchone()[0]))
+    small = dbm.new_speaker(d)                                                               # too few lines: no suggestion
+    for i in range(3):
+        _, e = voiced(env, T + 300 + i * 5, small, vec(700 + i, b, 0.15))
+        dbm.add_to_voiceprint(d, small, e, dbm.blob_to_vec(d.execute("SELECT vec FROM embeddings WHERE id=?", (e,)).fetchone()[0]))
+    sg = spk.suggestions(d)
+    assert [(s["cluster_id"], s["person_id"]) for s in sg] == [(cl, jordan)] and sg[0]["sim"] - sg[0]["next"]["sim"] >= config.MERGE_MARGIN
+    spk.dismiss_suggestion(d, cl, jordan)
+    assert spk.suggestions(d) == []                                                          # "No" is remembered
+    d.execute("UPDATE meta SET value='[]' WHERE key='merge_dismissed'")
+    spk.rename(d, cl, "Jordan", who="t")                                                    # "Yes, merge" = the existing merge
+    assert d.execute("SELECT merged_into FROM speakers WHERE id=?", (cl,)).fetchone()[0] == jordan
+    assert spk.suggestions(d) == []

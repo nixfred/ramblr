@@ -181,7 +181,8 @@ def test_colors_persistent_and_gray_for_unnamed():
     assert all(sp.contrast(c) >= 4.5 for c in sp.PALETTE + [sp.GRAY])
 
 
-def test_diarizer_follows_cluster_map_for_new_lines(world):
+def test_diarizer_follows_cluster_map_for_new_lines(world, monkeypatch):
+    monkeypatch.setattr(config, "SPK_NAMED_MIN_N", 1)   # about the cluster map, not the 8-sample naming floor
     d, L, S = world
     r = sp.reassign(d, L["L0"], name="Fred")
     sid, _ = dbm.insert_segment(d, time.time(), 2.0, "new line", "x.wav", "test", 1)

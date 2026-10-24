@@ -108,7 +108,8 @@ def capture_status(d, hb):
         mode = "muting"
     elif not st.get("muted") and mode == "muted":
         mode = "starting"
-    return {"family": bool(st.get("family")), "capture_state": mode, "muted": bool(st.get("muted")), "capture_source": dbm.get_meta(d, "capture_source", ""),
+    from . import calls
+    return {"call": calls.status(d), "family": bool(st.get("family")), "capture_state": mode, "muted": bool(st.get("muted")), "capture_source": dbm.get_meta(d, "capture_source", ""),
             "capture_chosen": st.get("source") or "", "capture_warning": dbm.get_meta(d, "capture_warning", "")}
 
 
@@ -1004,6 +1005,36 @@ def audit(limit: int = 40):
 
 
 # ---- phase 2: mute, action items, summaries, ask, markdown export ----
+@app.get("/api/call")
+def call_get():
+    from . import calls
+    return calls.status(db())
+
+
+@app.post("/api/call")
+async def call_set(request: Request):
+    """The site's Call button: {"on": true|false, "hours": optional}. On holds until switched off, with
+    CALL_SWITCH_HOURS (4 h) as the safety net. Call mode is also on while a heartbeat or gus itself sees a call."""
+    from . import calls
+    body = await request.json()
+    on = bool(body.get("on"))
+    hours = min(max(float(body.get("hours") or config.CALL_SWITCH_HOURS), 0.1), 12.0)
+    state.update(by="site:" + who_from(request), call_until=(time.time() + hours * 3600) if on else 0)
+    hub.publish("status", status())
+    return {"ok": True, **calls.status(db())}
+
+
+@app.get("/api/speakers/suggestions")
+def speaker_suggestions():
+    return spk.suggestions(db())
+
+
+@app.post("/api/speakers/suggestions/dismiss")
+async def speaker_suggestion_dismiss(request: Request):
+    b = await request.json()
+    return run_op(lambda: spk.dismiss_suggestion(db(), int(b["cluster_id"]), int(b["person_id"])))
+
+
 @app.post("/api/mute")
 async def mute(request: Request):
     """{"muted": true|false} or {"toggle": true}. Muted stops the recorder itself (capture follows within ~1 s)."""
@@ -1267,7 +1298,10 @@ def person_core(d, r):
     return {"id": r["id"], "name": r["name"], "named": bool(r["named"]), "confirmed": bool(r["confirmed"]),
             "color": spk.color_for(r["id"], r["named"], r["color"]), "custom_color": r["color"],
             "lines": tot["n"], "talk_secs": round(tot["secs"]), "first_seen": tot["a"], "last_seen": tot["b"],
-            "voiceprint_samples": (d.execute("SELECT n FROM voiceprints WHERE speaker_id=?", (r["id"],)).fetchone() or [0])[0]}
+            "voiceprint_samples": (d.execute("SELECT n FROM voiceprints WHERE speaker_id=?", (r["id"],)).fetchone() or [0])[0],
+            "ambiguous_samples": [{"segment_id": x["segment_id"], "t": fmt(x["ts"]), "day": x["day"], "text": x["text"][:80]} for x in d.execute(
+                """SELECT e.segment_id, s.ts, s.day, s.text FROM embeddings e JOIN segments s ON s.id=e.segment_id
+                   WHERE e.counted_for=? AND e.ambiguous=1 ORDER BY s.ts DESC LIMIT 20""", (r["id"],))]}
 
 
 @app.get("/api/people")

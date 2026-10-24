@@ -32,8 +32,11 @@ def assign(db, seg_id, dur, emb, vec_emb_id):
     """Pick a speaker for one segment from the saved voiceprints (named ones included)."""
     cur = db.execute("SELECT manual, speaker_id FROM segments WHERE id=?", (seg_id,)).fetchone()
     if cur["manual"]:
-        # Fred already set this line by hand: keep his speaker, let the voice teach that voiceprint (manual weight).
-        db.execute("UPDATE embeddings SET weight=? WHERE id=?", (config.MANUAL_WEIGHT, vec_emb_id))
+        # Fred already set this line by hand: keep his speaker, let the voice teach that voiceprint (manual weight,
+        # or AMBIGUOUS_WEIGHT if the sample sounds as much like another named person)
+        w, amb = speakers.manual_weight(db, vec_emb_id, speakers.resolve(db, cur["speaker_id"])) if cur["speaker_id"] is not None \
+            else (config.MANUAL_WEIGHT, False)
+        db.execute("UPDATE embeddings SET weight=?, ambiguous=? WHERE id=?", (w, 1 if amb else 0, vec_emb_id))
         if cur["speaker_id"] is not None:
             dbm.add_to_voiceprint(db, cur["speaker_id"], vec_emb_id, emb)
         db.execute("UPDATE segments SET emb_id=?, diar=1, audio=NULL WHERE id=?", (vec_emb_id, seg_id))
@@ -68,6 +71,7 @@ def decide(db, seg_id, dur, emb, vec_emb_id, learn=True):
     cluster. Named voiceprints learn only from very sure, long, media-free lines, so one person's print cannot
     swallow the whole room (2026-10-24: Fred's print had absorbed 130 lines incl. Jordan, kids and TV)."""
     named_people = {r[0] for r in db.execute("SELECT id FROM speakers WHERE named=1 AND merged_into IS NULL")}
+    thin = {r[0] for r in db.execute("SELECT speaker_id FROM voiceprints WHERE n<?", (config.SPK_NAMED_MIN_N,))}
     scored = []
     for sid, c in dbm.voiceprints(db):
         scored.append((float(np.dot(c, emb)), sid, speakers.resolve(db, sid)))
@@ -85,7 +89,8 @@ def decide(db, seg_id, dur, emb, vec_emb_id, learn=True):
         rival = max((x[0] for x in named if x[2] != person), default=-1.0)   # vs other NAMED people: an unnamed
         # room-average cluster sits near everyone and must not block naming (it never gets a name by accident either)
         quiet = not media_context(db, seg_id)      # a TV anchor resembles whoever's print is thinnest: never name it
-        if s >= config.SPK_NAMED_MATCH and s - rival >= config.SPK_MARGIN and quiet:
+        thick = sid not in thin                    # a print of < SPK_NAMED_MIN_N samples never names a line on its own
+        if s >= config.SPK_NAMED_MATCH and s - rival >= config.SPK_MARGIN and quiet and thick:
             if learn and dur >= config.SPK_LEARN_SECONDS and s >= config.SPK_UPDATE and s - rival >= config.SPK_UPDATE_MARGIN:
                 dbm.add_to_voiceprint(db, sid, vec_emb_id, emb)
             return sid, s

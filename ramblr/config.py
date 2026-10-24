@@ -47,6 +47,15 @@ SPK_LEARN_SECONDS = float(os.environ.get("RAMBLR_SPK_LEARN_SECONDS", 2.0))    # 
 # on the manual tags: leave-one-out margins +0.03..+0.15, so 0.10 keeps doubtful lines unnamed instead of wrong)
 SPK_NAMED_MATCH = float(os.environ.get("RAMBLR_SPK_NAMED_MATCH", 0.90))   # 0.80 let TV anchors and kids onto a 2-line Jordan print
 SPK_MARGIN = float(os.environ.get("RAMBLR_SPK_MARGIN", 0.10))
+# 2026-10-24 call: every voice on the room mic sits in a narrow cone (the two voices on the 2026-10-24 call: centroids cos 0.92), so thin prints
+# are unsafe to name from. A named print names lines on its own only from this many samples; until then lines go to
+# a cluster and the merge suggestion (cluster >= MERGE_MIN_LINES, closest named print by >= MERGE_MARGIN) asks Fred.
+SPK_NAMED_MIN_N = int(os.environ.get("RAMBLR_SPK_NAMED_MIN_N", 8))
+SPK_AMBIGUOUS_MARGIN = float(os.environ.get("RAMBLR_SPK_AMBIGUOUS_MARGIN", 0.02))   # a hand sample this close to another person
+AMBIGUOUS_WEIGHT = float(os.environ.get("RAMBLR_AMBIGUOUS_WEIGHT", 0.5))           # ... counts 0.5 instead of MANUAL_WEIGHT
+MERGE_MIN_LINES = int(os.environ.get("RAMBLR_MERGE_MIN_LINES", 10))
+MERGE_MARGIN = float(os.environ.get("RAMBLR_MERGE_MARGIN", 0.04))
+MERGE_FLOOR = float(os.environ.get("RAMBLR_MERGE_FLOOR", 0.80))
 SPK_MIN_SECONDS = float(os.environ.get("RAMBLR_SPK_MIN_SECONDS", 1.2))
 DIAR_INTERVAL = float(os.environ.get("RAMBLR_DIAR_INTERVAL", 5))
 DIAR_BATCH = int(os.environ.get("RAMBLR_DIAR_BATCH", 40))
@@ -112,6 +121,9 @@ TAILNET_URL = os.environ.get("RAMBLR_TAILNET_URL", "")   # e.g. https://<host>.<
 # B4-19 extra mics over the tailnet: the web relays authenticated streams to ramblr-mics over this 0600 socket
 MICS_SOCK = Path(os.environ.get("RAMBLR_MICS_SOCK", Path(os.environ.get("XDG_RUNTIME_DIR", "/dev/shm")) / "ramblr-mics.sock"))
 MIC_KEY = os.environ.get("RAMBLR_MIC_KEY", "")
+CALL_KEY = os.environ.get("RAMBLR_CALL_KEY", "")         # call heartbeat from another machine (fnix), own key like the mic key
+CALL_TTL_MAX = float(os.environ.get("RAMBLR_CALL_TTL_MAX", 180))   # a heartbeat keeps call mode on for at most this long
+CALL_SWITCH_HOURS = float(os.environ.get("RAMBLR_CALL_SWITCH_HOURS", 4))   # the site/ctl switch turns itself off after this
 
 # B3-14 voice router on gus (Fred 7:01 AM): 127.0.0.1 + the tailnet IP only, its own log DB (never deleted)
 ROUTER_PORT = int(os.environ.get("RAMBLR_ROUTER_PORT", 8783))

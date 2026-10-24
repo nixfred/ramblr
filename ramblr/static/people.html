@@ -53,8 +53,18 @@ const {$,el,api,post,toast,fmtDur}=R;
 let PEOPLE=[],cur=+(new URLSearchParams(location.search).get('id')||0),PAL=[];
 const initial=n=>(n||'?').replace(/^Speaker\s*/,'#').slice(0,2).toUpperCase();
 function avatar(p,cls){const a=el('div','av'+(cls?' '+cls:''),initial(p.name));a.style.background=p.color;a.style.setProperty('--c',p.color+'88');return a}
+async function loadSuggestions(box){
+  // "Speaker N sounds like X: same person?" one click merges (the existing rename-to-that-name merge); No is remembered
+  let sg=[];try{sg=await api('/api/speakers/suggestions')}catch(e){return}
+  sg.forEach(s=>{const c=el('div','card sugg');c.setAttribute('role','note');
+    c.append(el('div',null,`${s.cluster} sounds like ${s.person} (${s.sim}${s.next?` vs ${s.next.person} ${s.next.sim}`:''}, ${s.lines} lines). Same person?`));
+    const y=el('button','hot','Yes, merge');y.onclick=async()=>{y.disabled=true;try{await post(`/api/speakers/${s.cluster_id}/rename`,{name:s.person});toast(`Merged ${s.cluster} into ${s.person}`);await loadList()}catch(e){y.disabled=false;toast('Failed: '+e.message)}};
+    const n=el('button',null,'No');n.onclick=async()=>{try{await post('/api/speakers/suggestions/dismiss',{cluster_id:s.cluster_id,person_id:s.person_id});c.remove()}catch(e){toast('Failed: '+e.message)}};
+    c.append(y,n);box.append(c)});
+}
 async function loadList(){
   PEOPLE=await api('/api/people');const box=$('#list');box.textContent='';
+  await loadSuggestions(box);
   if(!PEOPLE.length){box.append(el('div','empty','Nobody yet. Voices appear here once Ramblr hears them.'));return}
   const mx=Math.max(1,...PEOPLE.flatMap(p=>p.last14));
   PEOPLE.forEach(p=>{const b=el('button','pc'+(p.id===cur?' on':''));b.dataset.id=p.id;
@@ -73,6 +83,8 @@ async function show(id,quiet){
   const d=$('#detail');d.textContent='';
   const top=el('div','top');const h=el('h1',null,p.name);h.style.color=p.color;
   top.append(avatar(p),h);if(p.confirmed)top.append(el('span','chip ok','confirmed as you'));if(!p.named)top.append(el('span','chip warn','unnamed voice'));
+  if((p.ambiguous_samples||[]).length){const a=el('span','chip warn',`ambiguous sample${p.ambiguous_samples.length>1?'s':''}: ${p.ambiguous_samples.length}`);
+    a.title='Hand-labelled lines whose voice sounds about as much like someone else. They keep your label but count half in the voiceprint:\n'+p.ambiguous_samples.map(x=>`[${x.day} ${x.t}] ${x.text}`).join('\n');top.append(a)}
   d.append(top);
   const st=el('div','stats');
   const days=p.per_day.length;

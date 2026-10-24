@@ -23,10 +23,12 @@ def mix(a, b, cos):
 
 
 @pytest.fixture
-def env():
+def env(monkeypatch):
     from ramblr import config, db, diarize, speakers
     for m in (db, speakers, diarize):
         importlib.reload(m)
+    monkeypatch.setattr(config, "SPK_NAMED_MIN_N", 1)   # these tests are about the E1 gates with 1-sample prints;
+    # the 8-sample floor for auto-naming has its own test (tests/test_callmode.py)
     d = db.connect(config.DB_PATH)
     e = np.eye(DIM, dtype=np.float32)
     fred, cry = db.new_speaker(d, "Fred", 1), db.new_speaker(d, "Jordan", 1)

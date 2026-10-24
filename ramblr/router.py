@@ -63,6 +63,14 @@ def key():
     return os.environ.get("RAMBLR_VOICE_ROUTER_KEY", "")
 
 
+def call_key():
+    """RAMBLR_CALL_KEY: created in secrets.env on first use (never printed), like the mic and upload keys."""
+    if not config.CALL_KEY:
+        from .uploads import ensure_secret
+        config.CALL_KEY = ensure_secret("RAMBLR_CALL_KEY", "call heartbeat key: clients/ramblr-call-heartbeat sends it as 'Authorization: Bearer <key>'")
+    return config.CALL_KEY
+
+
 def upstream():
     return os.environ.get("RAMBLR_GROKBOT_WEBHOOK_URL", ""), os.environ.get("RAMBLR_GROKBOT_WEBHOOK_KEY", "")
 
@@ -107,6 +115,28 @@ def make_app(db_path=None):
 
     def view(r):
         return {"command_id": r["command_id"], "class": r["cls"], "status": r["status"], "why": r["why"] or "", "result": r["result"] or ""}
+
+    @app.post("/call")
+    async def call_heartbeat(request: Request):
+        """Call heartbeat from the machine that has the call (clients/ramblr-call-heartbeat on fnix): call mode on
+        gus stays on for the TTL. Tailnet only (this router listens on 127.0.0.1 and the tailnet IP), its own bearer
+        key RAMBLR_CALL_KEY (the mic-key pattern), never the router key. Body: {"ttl": 90, "app": "zoom"}."""
+        from . import calls, db as dbm
+        got = request.headers.get("authorization", "")
+        got = got[7:].strip() if got.lower().startswith("bearer ") else ""
+        ck = call_key()
+        if not ck or not hmac.compare_digest(got, ck):
+            raise HTTPException(401, "call key required")
+        try:
+            p = await request.json()
+        except Exception:
+            p = {}
+        ed = dbm.connect(config.DB_PATH)
+        try:
+            cid, ttl = calls.heartbeat(ed, p.get("app"), p.get("ttl"))
+        finally:
+            ed.close()
+        return {"ok": True, "call_id": cid, "ttl": ttl}
 
     @app.post("/route")
     async def route(request: Request):

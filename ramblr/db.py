@@ -335,7 +335,7 @@ def migrate(db):
             ("embeddings", "weight", "REAL NOT NULL DEFAULT 1"),
             ("segments", "media", "INTEGER"), ("segments", "media_p", "REAL"),
             ("bookmarks", "span_start", "REAL"), ("bookmarks", "span_end", "REAL"), ("segments", "source", "TEXT"),
-            ("segments", "text_orig", "TEXT"),
+            ("segments", "text_orig", "TEXT"), ("embeddings", "ambiguous", "INTEGER NOT NULL DEFAULT 0"),
             ("command_intents", "command_id", "TEXT"), ("command_intents", "target", "TEXT"), ("command_intents", "task", "TEXT"),
             ("command_intents", "speaker", "TEXT"), ("command_intents", "confidence", "REAL"), ("command_intents", "result", "TEXT"),
             ("command_intents", "tries", "INTEGER"), ("command_intents", "sent_at", "REAL"), ("command_intents", "next_try", "REAL"),

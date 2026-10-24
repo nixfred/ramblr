@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Ramblr call heartbeat (user LaunchAgent): every 20 s, tell Ramblr whether a call is live on this Mac.
+     Install: cp clients/ramblr-call-heartbeat ~/.local/bin/ && cp this file ~/Library/LaunchAgents/ &&
+              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nixfred.ramblr-call.plist
+     Remove:  launchctl bootout gui/$(id -u)/com.nixfred.ramblr-call -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.nixfred.ramblr-call</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>-c</string><string>exec "$HOME/.local/bin/ramblr-call-heartbeat"</string></array>
+  <key>StartInterval</key><integer>20</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/ramblr-call-heartbeat.err</string>
+</dict>
+</plist>

@@ -35,10 +35,13 @@
     const st = el('span', 'status starting'); st.id = 'status'; st.append(el('i'), el('span', null, 'CONNECTING')); st.setAttribute('role', 'status');
     const mb = el('button', null, 'Mute'); mb.id = 'mutebtn'; mb.title = 'Mute stops the recorder entirely (Alt+Shift+\\)';
     mb.onclick = async () => { try { const r = await post('/api/mute', {toggle: true}); toast(r.muted ? 'Muted: the recorder is stopped' : 'Listening'); } catch (e) { toast('Failed: ' + e.message); } };
+    // call mode (2026-10-24): a caller out of the speakers is a person, not TV. On holds until switched off (4 h safety net)
+    const cb = el('button', null, 'Call'); cb.id = 'callbtn'; cb.title = 'Call mode: room lines are talk, never TV, while you are on a call';
+    cb.onclick = async () => { const on = cb.dataset.switch !== '1'; try { const r = await post('/api/call', {on}); toast(on ? 'Call mode on: call voices are people, not TV' : (r.live ? 'Call switch off (a call is still detected: ' + r.signals.join(', ') + ')' : 'Call mode off')); } catch (e) { toast('Failed: ' + e.message); } };
     const kb = el('button', 'kbtn'); kb.append(el('span', 'k', 'Ctrl'), el('span', 'k', 'K')); kb.title = 'Command palette'; kb.onclick = () => window.ramblrPalette && window.ramblrPalette.open();
     const menu = el('button', 'menubtn', '☰'); menu.title = 'All commands'; menu.setAttribute('aria-label', 'All commands');
     menu.onclick = () => window.ramblrPalette && window.ramblrPalette.open();
-    bar.append(logo, nav, el('div', 'spacer'), st, mb, kb, menu);
+    bar.append(logo, nav, el('div', 'spacer'), st, cb, mb, kb, menu);
     const tk = el('div'); tk.id = 'ticker'; tk.setAttribute('aria-live', 'off');
     tk.append(el('span', 'lbl', 'LIVE'), (() => { const l = el('div', 'lane'); l.append(el('div', 'run')); return l; })());
     h.append(bar, tk);
@@ -140,6 +143,14 @@
     st.className = 'status ' + cls; st.lastChild.textContent = txt;
     st.title = s.capture_warning || (s.muted ? 'Nothing is being recorded' : 'Recording ' + (s.capture_source || ''));
     const mb = $('#mutebtn'); mb.classList.toggle('on', !!s.muted); mb.textContent = s.muted ? 'Unmute' : 'Mute';
+    const c = s.call || {}, cb = $('#callbtn');
+    if (cb) {
+      cb.dataset.switch = c.switch_until ? '1' : '0'; cb.classList.toggle('on', !!c.live); cb.textContent = c.live ? 'On call' : 'Call';
+      const why = (c.signals || []).map(x => x === 'switch' ? 'switch (until ' + new Date(c.switch_until * 1000).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) + ')'
+        : x === 'heartbeat' ? 'heartbeat from ' + (c.heartbeat_app || 'another machine') : 'gus: ' + c.gus_app);
+      cb.title = c.live ? 'Call mode ON: ' + why.join(' · ') + (c.switch_until ? '. Click to switch it off.' : '') : 'Call mode: room lines are talk, never TV, while you are on a call';
+      if (c.live && !s.muted) { st.lastChild.textContent = txt + ' · CALL'; }
+    }
     emit('status', s);
   }
 

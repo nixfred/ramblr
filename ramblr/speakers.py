@@ -105,6 +105,41 @@ def _move_emb(db, emb_id, to_speaker, weight):
         dbm.add_to_voiceprint(db, to_speaker, emb_id, vec)
 
 
+def ambiguous_sample(db, emb_id, to):
+    """True if this hand-labelled voice sample sounds about as much like another named person as like `to`: within
+    SPK_AMBIGUOUS_MARGIN of another named print, compared with `to`'s print without this sample. Fred's word still
+    wins (the line keeps his label); the sample just counts AMBIGUOUS_WEIGHT so one mixed clip cannot steer a thin
+    print. 2026-10-24: a hand-labelled line scored 0.912 vs 0.907 between the two people on a call, and one caller sample was closer to Fred."""
+    e = db.execute("SELECT vec, counted_for, weight FROM embeddings WHERE id=?", (emb_id,)).fetchone()
+    if not e:
+        return False
+    v = dbm.blob_to_vec(e["vec"])
+    own, others = None, []
+    for r in db.execute("""SELECT v.speaker_id, v.vec_sum, v.n FROM voiceprints v JOIN speakers s ON s.id=v.speaker_id
+                           WHERE s.named=1 AND s.merged_into IS NULL"""):
+        s = dbm.blob_to_vec(r["vec_sum"])
+        n = r["n"]
+        if e["counted_for"] == r["speaker_id"]:
+            s, n = s - float(e["weight"]) * v, n - 1        # judge against the print without this very sample
+        nrm = np.linalg.norm(s)
+        if n <= 0 or nrm == 0:
+            continue
+        sim = float(v @ (s / nrm))
+        if resolve(db, r["speaker_id"]) == to:
+            own = sim
+        else:
+            others.append(sim)
+    if own is None or not others:
+        return False                                       # a first sample, or nobody to confuse it with
+    return max(others) >= own - config.SPK_AMBIGUOUS_MARGIN
+
+
+def manual_weight(db, emb_id, to):
+    """(weight, ambiguous flag) for a hand-labelled sample."""
+    amb = ambiguous_sample(db, emb_id, to)
+    return (config.AMBIGUOUS_WEIGHT if amb else config.MANUAL_WEIGHT), amb
+
+
 def _manual_set(db, seg, to, batch, kind, who):
     """Set one line by hand: speaker reference + manual flag + voiceprint move. Never touches the text."""
     e = db.execute("SELECT counted_for, weight FROM embeddings WHERE id=?", (seg["emb_id"],)).fetchone() if seg["emb_id"] else None
@@ -112,7 +147,9 @@ def _manual_set(db, seg, to, batch, kind, who):
            e["counted_for"] if e else None, e["weight"] if e else None)
     db.execute("UPDATE segments SET speaker_id=?, manual=1 WHERE id=?", (to, seg["id"]))
     if e:
-        _move_emb(db, seg["emb_id"], to, config.MANUAL_WEIGHT)
+        w, amb = manual_weight(db, seg["emb_id"], to)
+        _move_emb(db, seg["emb_id"], to, w)
+        db.execute("UPDATE embeddings SET ambiguous=? WHERE id=?", (1 if amb else 0, seg["emb_id"]))
 
 
 def _tx(db, fn):
@@ -371,3 +408,44 @@ def history(db, limit=40):
         out.append({"batch_id": r["batch_id"], "kinds": r["kinds"].split(","), "lines": r["n"], "created": r["created"],
                     "undone": r["undone_at"] is not None, "who": r["who"], "parent": r["parent"], "to": nm[0] if nm else None})
     return out
+
+
+def suggestions(db):
+    """'Speaker N sounds like X: same person?' for unnamed voices with >= MERGE_MIN_LINES lines whose voiceprint is
+    closest to one named person by >= MERGE_MARGIN (and at least MERGE_FLOOR). Fred answers with one click: yes is
+    the existing merge (rename to that name), no is remembered. Nothing is merged automatically."""
+    import json
+    dismissed = set(json.loads(dbm.get_meta(db, "merge_dismissed", "[]") or "[]"))
+    named = [(r["id"], r["name"], dbm.blob_to_vec(r["vec_sum"])) for r in db.execute(
+        """SELECT s.id, s.name, v.vec_sum FROM speakers s JOIN voiceprints v ON v.speaker_id=s.id
+           WHERE s.named=1 AND s.merged_into IS NULL AND v.n>0""")]
+    named = [(i, n, v / np.linalg.norm(v)) for i, n, v in named if np.linalg.norm(v) > 0]
+    out = []
+    if not named:
+        return out
+    for r in db.execute("""SELECT s.id, s.name, v.vec_sum, v.n, (SELECT COUNT(*) FROM segments g WHERE g.speaker_id=s.id AND g.noise=0) lines
+                           FROM speakers s JOIN voiceprints v ON v.speaker_id=s.id
+                           WHERE s.named=0 AND s.merged_into IS NULL AND v.n>0"""):
+        if r["lines"] < config.MERGE_MIN_LINES:
+            continue
+        c = dbm.blob_to_vec(r["vec_sum"])
+        if np.linalg.norm(c) == 0:
+            continue
+        c = c / np.linalg.norm(c)
+        sims = sorted(((float(c @ v), i, n) for i, n, v in named), reverse=True)
+        best, pid, pname = sims[0]
+        second = sims[1][0] if len(sims) > 1 else -1.0
+        if best < config.MERGE_FLOOR or best - second < config.MERGE_MARGIN or f"{r['id']}:{pid}" in dismissed:
+            continue
+        out.append({"cluster_id": r["id"], "cluster": r["name"], "lines": r["lines"], "samples": r["n"],
+                    "person_id": pid, "person": pname, "sim": round(best, 3),
+                    "next": ({"person": sims[1][2], "sim": round(second, 3)} if len(sims) > 1 else None)})
+    return sorted(out, key=lambda x: -x["lines"])
+
+
+def dismiss_suggestion(db, cluster_id, person_id):
+    import json
+    cur = set(json.loads(dbm.get_meta(db, "merge_dismissed", "[]") or "[]"))
+    cur.add(f"{int(cluster_id)}:{int(person_id)}")
+    dbm.set_meta(db, "merge_dismissed", json.dumps(sorted(cur)))
+    return {"dismissed": len(cur)}
