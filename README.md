@@ -161,6 +161,10 @@ Both are loaded by every unit with `EnvironmentFile=-`. Names only here; values 
 - **Model calls can't act.** Text models run with no tools (`claude -p --tools ""`, strict MCP config).
 - **Nothing private in git:** databases, audio, embeddings, voiceprints, backups, `*.env` and keys are gitignored.
 
+## License
+
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Fred Nix.
+
 ---
 
 # Reference

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ramblr-mic (B4-19): stream this machine's mic to Ramblr on gus over the tailnet.
 #   Needs: curl, and parec (PipeWire/Pulse) or arecord (ALSA, e.g. a Pi). No Python.
-#   Key:   RAMBLR_MIC_KEY=... in ~/.config/ramblr/secrets.env (file 600, dir 700), same value as on gus.
+#   Key:   a line setting RAMBLR_MIC_KEY in ~/.config/ramblr/secrets.env (file 600, dir 700), same value as on the server.
 #          RAMBLR_KEY_FILE may point at another 600 file holding that line or just the bare key.
 #          It goes to curl through a file descriptor, never on the command line (ps cannot see it).
 #   Run:   ramblr-mic            (or the ramblr-mic.service user unit, which restarts it)
