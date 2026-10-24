@@ -1,6 +1,7 @@
 """Command line used by the Hyprland hotkeys and the bar widget.
 
   python -m ramblr.ctl mute toggle|on|off      stop/start recording (state.json; capture follows within ~1 s)
+  python -m ramblr.ctl call on [MIN]|off|status call mode for a call on another device (default 120 min, then off)
   python -m ramblr.ctl status                  one JSON line: listening/muted, mic, warning
   python -m ramblr.ctl watch [--interval N]    a status line every N s (the bar widget reads this)
 """
@@ -42,6 +43,16 @@ def main(argv):
         notify.send({"t": "cap"})
         toast("Muted: nothing is being recorded" if new else "Listening")
         print(json.dumps({"muted": new}))
+    elif cmd == "call":
+        from . import calls
+        arg = argv[1] if len(argv) > 1 else "status"
+        if arg in ("on", "off"):
+            mins = float(argv[2]) if arg == "on" and len(argv) > 2 else 120.0
+            state.update(by="ctl", call_until=time.time() + mins * 60 if arg == "on" else 0)
+            notify.send({"t": "cap"})
+            toast(f"Call mode on for {mins:g} min: call voices are people, not TV" if arg == "on" else "Call mode off")
+        on, until = calls.switch()
+        print(json.dumps({"call_switch": on, "until": round(until) if on else None, "detected": calls.detect()}))
     elif cmd == "status":
         print(json.dumps(status(dbm.connect(config.DB_PATH))))
     elif cmd == "watch":

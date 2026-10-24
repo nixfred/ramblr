@@ -48,10 +48,15 @@ def assign(db, seg_id, dur, emb, vec_emb_id):
 
 def media_context(db, seg_id):
     """True if the room TV / music was audible or a Cast device was playing during the line: never learn a voice then."""
-    r = db.execute("SELECT ts, dur, source FROM segments WHERE id=?", (seg_id,)).fetchone()
+    r = db.execute("SELECT ts, dur, source, media FROM segments WHERE id=?", (seg_id,)).fetchone()
     if not r:
         return False
     a, b = r["ts"], r["ts"] + max(r["dur"], 0.3)
+    if r["media"] == -1:
+        return False                    # Fred said this line is talk, not the TV
+    from . import calls
+    if r["source"] is None and calls.during(db, a, b):
+        return False                    # call mode: the voice out of the speakers is a caller
     m = db.execute("SELECT AVG(MAX(tv, music)) FROM media_windows WHERE ts1>? AND ts0<? AND source IS ?", (a, b, r["source"])).fetchone()[0]
     from . import players
     return bool((m or 0) > 0.3 or (r["source"] is None and players.cast_playing(db, a, b)))

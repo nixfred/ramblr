@@ -236,6 +236,10 @@ CREATE TRIGGER IF NOT EXISTS facts_never_delete BEFORE DELETE ON facts BEGIN SEL
 CREATE TRIGGER IF NOT EXISTS goals_never_delete BEFORE DELETE ON goals BEGIN SELECT RAISE(ABORT, 'ramblr: goals are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS insights_never_delete BEFORE DELETE ON insights BEGIN SELECT RAISE(ABORT, 'ramblr: insights are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS topic_trackers_never_delete BEFORE DELETE ON topic_trackers BEGIN SELECT RAISE(ABORT, 'ramblr: trackers are switched off, never deleted'); END;
+-- call mode (2026-10-24): stretches when a call was live; room lines in them are talk, never auto media
+CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, t0 REAL NOT NULL, t1 REAL NOT NULL, app TEXT, how TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS calls_t ON calls(t1, t0);
+CREATE TRIGGER IF NOT EXISTS calls_never_delete BEFORE DELETE ON calls BEGIN SELECT RAISE(ABORT, 'ramblr: call records are never deleted'); END;
 -- B3-11 auto-sorted folders
 CREATE TABLE IF NOT EXISTS folders(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, created REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS folder_items(item_type TEXT NOT NULL, item_id INTEGER NOT NULL, folder_id INTEGER NOT NULL,

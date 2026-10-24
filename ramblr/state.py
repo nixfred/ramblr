@@ -1,4 +1,4 @@
-"""Runtime switches in ~/.config/ramblr/state.json: mute and the chosen mic. Written by the site, the hotkeys
+"""Runtime switches in ~/.config/ramblr/state.json: mute, the chosen mic and the call switch (call_until). Written by the site, the hotkeys
 (`python -m ramblr.ctl`) and the bar widget; the capture service re-reads it within a second of any change."""
 import fcntl
 import json
@@ -7,7 +7,7 @@ import time
 
 from . import config
 
-DEFAULTS = {"muted": False, "source": None, "changed": 0, "by": ""}
+DEFAULTS = {"muted": False, "source": None, "changed": 0, "by": "", "call_until": 0}
 
 
 def load():

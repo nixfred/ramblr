@@ -311,9 +311,9 @@ function pickerDlg(o){
   const inp=el('input');inp.type='text';inp.placeholder='Name… (Enter picks or creates)';inp.style.width='100%';inp.setAttribute('aria-label','Person name');
   const opts=el('div','opts');opts.setAttribute('role','listbox');
   const people=S.speakers.filter(s=>s.named);
-  people.forEach(sp=>{const b=el('button');b.dataset.name=sp.name.toLowerCase();b.setAttribute('role','option');
+  people.forEach(sp=>{const b=el('button');b.dataset.name=sp.name.toLowerCase();b.dataset.sid=sp.id;b.setAttribute('role','option');
     const i=el('i');i.style.background=sp.color;b.append(i,el('span',null,sp.name+(sp.confirmed?' ✓':'')));
-    if(o.line&&sp.id===o.line.speaker_id)b.append(el('small',null,'current'));b.onclick=()=>pick({speaker_id:sp.id});opts.append(b)});
+    if(o.line&&sp.id===o.line.speaker_id)b.append(el('small','cur','current'));b.onclick=()=>pick({speaker_id:sp.id});opts.append(b)});
   const nb=el('button');nb.append(el('span',null,'+ New person…'));nb.dataset.new='1';nb.onclick=()=>{const n=inp.value.trim();if(n)pick({name:n});else{inp.placeholder='New person name, then Enter';inp.focus()}};opts.append(nb);
   w.append(inp,opts);
   if(o.line&&o.line.speaker_id!=null&&!o.line.speaker_named){const rn=el('button',null,`Name “${o.line.speaker}” everywhere instead…`);rn.style.marginTop='4px';rn.onclick=()=>{$('#dlg').close();renameDlg(o.line.speaker_id,o.line.speaker)};w.append(rn)}
@@ -325,11 +325,19 @@ function pickerDlg(o){
     if(e.key==='Enter'){e.preventDefault();const q=inp.value.trim();const m=vis().filter(b=>b.dataset.name);
       const exact=m.find(b=>b.dataset.name===q.toLowerCase());if(exact)exact.click();else if(q)pick({name:q});else if(m.length===1)m[0].click()}};
   opts.onkeydown=e=>{const v=vis(),i=v.indexOf(document.activeElement);if(e.key==='ArrowDown'){e.preventDefault();(v[i+1]||v[0]).focus()}if(e.key==='ArrowUp'){e.preventDefault();i<=0?inp.focus():v[i-1].focus()}};
+  let busy=false;
   async function pick(t){
+    // one save at a time, and show the choice at once: a slow save used to leave the old "current" on screen, so
+    // the same person got picked again and again (line 298: 7 saves in 4 s)
+    if(busy)return;busy=true;
+    const btns=[...w.querySelectorAll('button')];btns.forEach(b=>b.disabled=true);
+    w.querySelectorAll('small.cur').forEach(s=>s.remove());
+    const chosen=t.speaker_id!=null?opts.querySelector(`button[data-sid="${t.speaker_id}"]`):null;
+    if(chosen)chosen.append(el('small','cur','saving…'));
     try{
       if(bulk){const r=await post('/api/segments/reassign',{segment_ids:o.ids,...t});d.close();S.sel.clear();await reload(true);showReview({kind:'bulk',r})}
-      else{const r=await post(`/api/segments/${o.line.id}/speaker`,t);d.close();await reload(true);showReview({kind:'line',r})}
-    }catch(e){toast('Failed: '+e.message)}
+      else{const r=await post(`/api/segments/${o.line.id}/speaker`,t);d.close();await reload(true);if(!r.unchanged)showReview({kind:'line',r})}
+    }catch(e){busy=false;btns.forEach(b=>b.disabled=false);toast('Failed: '+e.message)}
   }
 }
 let reviewTimer=null;

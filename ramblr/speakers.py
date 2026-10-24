@@ -138,6 +138,10 @@ def reassign(db, seg_id, speaker_id=None, name=None, who="site", propagate=True)
         if not seg:
             raise LookupError("no such line")
         to = person(db, speaker_id, name)
+        if seg["manual"] and seg["speaker_id"] is not None and resolve(db, seg["speaker_id"]) == to:
+            # already set by hand to this person: a repeat click (2026-10-24, line 298 got 7 identical saves in 4 s
+            # while the picker still showed the old name) must not add audit rows or run propagation again
+            return {"batch_id": None, "speaker_id": to, "propagation": None, "unchanged": True}
         batch = new_batch()
         _manual_set(db, seg, to, batch, "reassign", who)
         prop = _propagate(db, seg, to, batch, who) if propagate else None

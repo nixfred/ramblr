@@ -10,7 +10,7 @@ import time
 
 import numpy as np
 
-from . import audio24, config, db as dbm, mics, notify, state
+from . import audio24, calls, config, db as dbm, mics, notify, state
 from .asr import NpuWhisper
 from .pipeline import Ingest
 
@@ -49,6 +49,8 @@ class Capture:
         self.failed = {}            # source -> monotonic time parec last died on it
         self.started = time.time()
         self.last_hb = 0.0
+        self.last_call = 0.0
+        self.call = ""              # app holding a live call ("call switch" for the manual one), "" = none
         self.a24 = audio24.Writer()
 
     def publish(self):
@@ -108,6 +110,21 @@ class Capture:
             self.mode, self.warning = mode, warn
             self.publish()
 
+    def track_call(self):
+        """Call mode: while a call is live (and the mic is on) the stretch goes into the calls table."""
+        try:
+            app, how = calls.live()
+            if app and self.source:
+                now = time.time()
+                calls.record(self.ing.db, now - 5, now, app, how)
+            if (app or "") != self.call:
+                log.warning("call mode %s%s", "on: " if app else "off", app or "")
+                self.call = app or ""
+                dbm.set_meta(self.ing.db, "capture_call", self.call)
+                notify.send({"t": "cap"})
+        except Exception:
+            log.exception("call check failed (capture continues)")
+
     def run(self):
         buf = b""
         last_data = time.monotonic()
@@ -118,6 +135,9 @@ class Capture:
             if t - self.last_hb > 15:
                 self.last_hb = t
                 self.publish()
+            if t - self.last_call >= 5:
+                self.last_call = t
+                self.track_call()
             if self.proc is None:
                 time.sleep(0.5)
                 last_data = time.monotonic()

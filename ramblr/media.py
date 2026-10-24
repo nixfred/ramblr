@@ -173,8 +173,11 @@ def sessions(db, a, b, gap=60, min_len=20, source=None):
     """Media periods from one mic's classifier windows: [{t0, t1, kind: music|tv}], merged across short gaps. A window
     is music only if music is strong and speech is weak; narrated media (speech + music bed) is tv."""
     out = []
+    from . import calls
     for r in db.execute("""SELECT ts0, ts1, music, tv, narration, speech FROM media_windows WHERE ts1>=? AND ts0<? AND source IS ?
                            AND (music>=0.5 OR tv>=0.4) ORDER BY ts0""", (a, b, source)):
+        if source is None and calls.during(db, r["ts0"], r["ts1"]):
+            continue                                        # a caller out of the speakers, not media
         kind = "music" if r["music"] >= MUSIC_MIN and (r["speech"] or 0) < MUSIC_MAX_SPEECH else "tv"
         if out and r["ts0"] - out[-1]["t1"] < gap:
             out[-1]["t1"] = r["ts1"]
@@ -257,12 +260,39 @@ def sticky(db, seg, f):
     return bool(prev and prev["media"] in (1, 2) and seg["ts"] - (prev["ts"] + prev["dur"]) <= STICKY_GAP)
 
 
+def talk_carry(db, seg):
+    """Fred's latest label in this unbroken stretch of the same source (gaps <= STICKY_GAP) was "not media" (-1):
+    the stretch is still talk, so no automatic TV. A later "that was the TV" (2) ends it. 2026-10-24: Fred marked
+    a Zoom caller's lines not-TV four times and each next line came back TV (p 0.89-0.93)."""
+    edge = seg["ts"]
+    for r in db.execute("""SELECT ts, dur, media FROM segments WHERE source IS ? AND ts<? AND id<>? AND noise=0
+                           ORDER BY ts DESC LIMIT 400""", (seg["source"] if "source" in seg.keys() else None, seg["ts"], seg["id"])):
+        if edge - (r["ts"] + r["dur"]) > STICKY_GAP:
+            return False
+        if r["media"] == -1:
+            return True
+        if r["media"] == 2:
+            return False
+        edge = r["ts"]
+    return False
+
+
+def in_call(db, seg):
+    """Room-mic line spoken while a call was live (calls.py): a caller out of the speakers is a person, not TV."""
+    if ("source" in seg.keys() and seg["source"] is not None):
+        return False
+    from . import calls
+    return calls.during(db, seg["ts"], seg["ts"] + max(seg["dur"], 0.3))
+
+
 def decide(db, seg, model=None):
     model = model or load_model(db)
     f = features(db, seg)
     p = float(prob(model, f))
     m = 1 if p >= 0.5 else 0
-    if not m and p >= STICKY_MIN_P and sticky(db, seg, f):   # follow the stretch, but never over a line that clearly is talk
+    if m and (in_call(db, seg) or talk_carry(db, seg)):
+        m = 0                                                  # call mode, or Fred already said this stretch is talk
+    elif not m and p >= STICKY_MIN_P and not in_call(db, seg) and sticky(db, seg, f):   # follow the stretch, never over talk
         m = 1
     return m, p, f
 
