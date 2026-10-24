@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# ramblr-mic (B4-19): stream this machine's mic to Ramblr on gus over the tailnet.
+#   Needs: curl, and parec (PipeWire/Pulse) or arecord (ALSA, e.g. a Pi). No Python.
+#   Key:   RAMBLR_MIC_KEY=... in ~/.config/ramblr/secrets.env (file 600, dir 700), same value as on gus.
+#          RAMBLR_KEY_FILE may point at another 600 file holding that line or just the bare key.
+#          It goes to curl through a file descriptor, never on the command line (ps cannot see it).
+#   Run:   ramblr-mic            (or the ramblr-mic.service user unit, which restarts it)
+#          ramblr-mic --check    checks key, recorder and the tailnet path; never opens the mic
+# Audio is raw s16le 16 kHz mono, sent with TLS (tailscale serve) inside WireGuard. Nothing is kept on this machine.
+set -euo pipefail
+URL="${RAMBLR_URL:-}"              # https://<host>.<tailnet>.ts.net:8798, e.g. in ~/.config/ramblr/mic.env
+DEVICE="${RAMBLR_DEVICE:-$(hostname -s | tr 'A-Z_' 'a-z-')}"
+KEYFILE="${RAMBLR_KEY_FILE:-$HOME/.config/ramblr/secrets.env}"
+SOURCE="${RAMBLR_SOURCE:-}"          # PipeWire/Pulse source name, or ALSA device for arecord; empty = default
+
+[ -n "$URL" ] || { echo "ramblr-mic: set RAMBLR_URL=https://<host>.<tailnet>.ts.net:8798 (e.g. in ~/.config/ramblr/mic.env)" >&2; exit 2; }
+case "$URL" in https://*.ts.net|https://*.ts.net:*) ;; *) echo "ramblr-mic: refusing $URL (tailnet https only)" >&2; exit 2 ;; esac
+[[ "$DEVICE" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "ramblr-mic: bad device name '$DEVICE'" >&2; exit 2; }
+[ -r "$KEYFILE" ] || { echo "ramblr-mic: no key file $KEYFILE" >&2; exit 2; }
+[ "$(stat -c %a "$KEYFILE")" = 600 ] || { echo "ramblr-mic: $KEYFILE must be chmod 600" >&2; exit 2; }
+key() {   # the RAMBLR_MIC_KEY line's value, or the whole file when it is just the key
+  if grep -q '^RAMBLR_MIC_KEY=' "$KEYFILE"; then sed -n 's/^RAMBLR_MIC_KEY=//p' "$KEYFILE" | head -1 | tr -d '\r\n'
+  elif ! grep -q '=' "$KEYFILE"; then tr -d '\r\n' < "$KEYFILE"; fi   # a bare key never contains '='
+}
+[ -n "$(key)" ] || { echo "ramblr-mic: no RAMBLR_MIC_KEY in $KEYFILE" >&2; exit 2; }
+
+if command -v parec >/dev/null; then
+  rec=(parec --format=s16le --rate=16000 --channels=1 --latency-msec=200 --raw ${SOURCE:+-d "$SOURCE"})
+elif command -v arecord >/dev/null; then
+  rec=(arecord -q -f S16_LE -r 16000 -c 1 -t raw ${SOURCE:+-D "$SOURCE"})
+else
+  echo "ramblr-mic: needs parec or arecord" >&2; exit 2
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  echo "device:   $DEVICE"
+  echo "recorder: ${rec[0]}"
+  echo "key:      present in $KEYFILE (600)"
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$URL/api/mics/remote") || code=000
+  echo "gus:      $URL/api/mics/remote -> HTTP $code"
+  [ "$code" = 200 ]; exit
+fi
+
+"${rec[@]}" | curl -sS --fail-with-body -X POST -T - \
+  -H "Content-Type: application/octet-stream" \
+  -K <(printf 'header = "Authorization: Bearer %s"\n' "$(key)") \
+  "$URL/api/mic/stream?device=$DEVICE"

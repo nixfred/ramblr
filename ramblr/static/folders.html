@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr folders</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.fh .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.wrap{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;margin-top:12px;align-items:start}
+.fl{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 220px);overflow:auto}
+.fl button{justify-content:space-between;width:100%}.fl button.on{border-color:var(--teal);box-shadow:var(--glow);color:var(--teal)}
+.it{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:start;padding:10px 4px;border-bottom:1px solid #111b2c;font-family:var(--sans);font-size:14px}
+.it .ic{font-size:18px;text-align:center}.it b{display:block}.it small{color:var(--dim);font-family:var(--mono)}
+.it select{min-height:32px;font-size:12px;max-width:150px}
+@media(max-width:820px){.wrap{grid-template-columns:1fr}.fl{flex-direction:row;overflow-x:auto;max-height:none}.fl button{width:auto;white-space:nowrap}}
+</style>
+</head>
+<body data-page="folders">
+<main class="page">
+  <div class="fh"><span class="title glitch">FOLDERS</span> <span class="dim" style="font-size:12px">conversation cards and ideas sort themselves; moving one by hand sticks</span></div>
+  <div class="wrap">
+    <nav class="fl" id="fl" aria-label="Folders"></nav>
+    <section class="card" id="items"><div class="empty">Folders fill up as conversations end and ideas come in.</div></section>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,post,toast}=R;
+let F=[],names=[],cur=null;
+async function load(){const r=await api('/api/folders');F=r.folders;names=r.names;if(!cur&&F.length)cur=F[0].id;render()}
+function render(){
+  const fl=$('#fl');fl.textContent='';
+  F.forEach(f=>{const b=el('button',f.id===cur?'on':'');b.append(el('span',null,f.name),el('small','dim',String(f.count)));b.onclick=()=>{cur=f.id;render()};fl.append(b)});
+  const box=$('#items');box.textContent='';const f=F.find(x=>x.id===cur);
+  if(!f){box.append(el('div','empty','Folders fill up as conversations end and ideas come in.'));return}
+  box.append(el('h2',null,f.name));
+  f.items.forEach(it=>{const r=el('div','it');r.append(el('span','ic',it.type==='idea'?'✦':'◆'));
+    const t=el('div');const a=el('a');a.style.color='inherit';a.style.textDecoration='none';
+    a.href=it.type==='idea'?'/ideas':`/?day=${R.ymd(it.ts)}#seg-${it.first_seg}`;a.append(el('b',null,it.title||'(untitled)'));t.append(a);
+    t.append(el('small',null,`${it.type} · ${new Date(it.ts*1000).toLocaleDateString()}${it.source==='manual'?' · moved by hand':''}`));if(it.summary)t.append(el('div',null,it.summary));
+    const sel=el('select');sel.setAttribute('aria-label','Move to folder');sel.append(Object.assign(el('option',null,'Move to…'),{value:''}));
+    names.filter(n=>n!==f.name).forEach(n=>{const o=el('option',null,n);o.value=n;sel.append(o)});sel.append(Object.assign(el('option',null,'New folder…'),{value:'__new'}));
+    sel.onchange=async()=>{let to=sel.value;if(to==='__new')to=prompt('New folder name');if(!to)return;
+      try{await post('/api/folders/move',{item_type:it.type,item_id:it.id,folder:to});toast('Moved to '+to);load()}catch(e){toast('Failed: '+e.message)}};
+    r.append(t,sel);box.append(r)});
+}
+R.on('conv',load);R.on('idea',load);load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

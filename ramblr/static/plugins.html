@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr plugins</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.ph .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:12px;margin-top:12px}
+.run{border-bottom:1px solid #111b2c;padding:8px 2px}.run b{color:#fff}.run small{color:var(--dim);font-family:var(--mono)}
+.run pre{white-space:pre-wrap;font:13px/1.45 var(--sans);margin:6px 0 0;max-height:240px;overflow:auto}
+pre.tpl{background:#0a101b;border:1px solid var(--line2);border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap}
+.row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #111b2c;font-size:13px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page="plugins">
+<main class="page">
+  <div class="ph"><span class="title glitch">PLUGINS</span> <span class="dim" style="font-size:12px">your scheduled prompt files; results stay here, nothing is sent</span></div>
+  <div class="grid">
+    <section class="card"><h2>Recent runs</h2><div id="runs"></div></section>
+    <div>
+      <section class="card"><h2>Plugins</h2><div id="pl"></div>
+        <h2 style="margin-top:12px">Add one</h2>
+        <p class="dim">Create a Markdown file in <code>~/.config/ramblr/plugins/</code>:</p>
+        <pre class="tpl">---
+name: Standup notes
+schedule: daily 08:00      # hourly | daily HH:MM | weekly mon HH:MM | on conversation.card
+input: yesterday           # today | yesterday | last_7_days | last_conversation
+---
+From these lines, write my standup: done, doing, blocked.</pre></section>
+      <section class="card" style="margin-top:12px"><h2>Webhooks</h2><div id="wh"></div></section>
+    </div>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api}=R;
+async function load(){
+  const r=await api('/api/plugins');
+  const pl=$('#pl');pl.textContent='';if(!r.plugins.length&&!r.errors.length)pl.append(el('div','dim','No plugins yet.'));
+  r.plugins.forEach(p=>{const d=el('div','row');d.append(el('span',null,p.name),el('span','dim',`${p.schedule} · ${p.input}`));pl.append(d)});
+  r.errors.forEach(x=>pl.append(el('div','chip bad',`${x.file}: ${x.error}`)));
+  const rs=$('#runs');rs.textContent='';if(!r.runs.length)rs.append(el('div','dim','No runs yet.'));
+  r.runs.forEach(x=>{const d=el('div','run');d.append(el('b',null,x.plugin),el('small',null,` ${x.slot} · ${x.status}${x.model?' · '+x.model:''}${x.lines?' · '+x.lines+' lines':''}`));
+    if(x.output)d.append(el('pre',null,x.output));rs.append(d)});
+  const wh=$('#wh');wh.textContent='';
+  if(!r.webhooks.length)wh.append(el('div','dim','Off. Events are recorded locally; nothing leaves gus until you create ~/.config/ramblr/webhooks.json (see README).'));
+  r.webhooks.forEach((h,i)=>wh.append(el('div','row',`hook ${i}: ${Array.isArray(h.events)?h.events.join(', '):'all events'} · ${h.signed?'HMAC signed':'unsigned'}`)));
+  wh.append(el('div','sec dim',`last events: ${r.events.map(e=>e.kind).slice(0,6).join(', ')||'none'}`));
+  r.deliveries.slice(0,8).forEach(x=>wh.append(el('div','row',`event ${x.event_id} → hook ${x.hook}: ${x.status}${x.error?' ('+x.error+')':''} · tries ${x.tries}`)));
+}
+load();setInterval(load,30000);
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

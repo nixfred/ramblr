@@ -1,0 +1,19 @@
+[Unit]
+Description=Ramblr: batch speaker labelling on CPU (wespeaker ONNX, nice 19, 1 thread)
+After=ramblr-capture.service
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.diarize
+Environment=PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+Restart=always
+RestartSec=5
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+
+[Install]
+WantedBy=default.target

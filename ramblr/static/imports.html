@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr imports</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.ih .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.it{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #111b2c;font-size:13px}
+code{background:#0a101b;border:1px solid var(--line2);border-radius:5px;padding:1px 5px;font-size:12px}
+@media(max-width:820px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page="imports">
+<main class="page">
+  <div class="ih"><span class="title glitch">IMPORTS</span> <span class="dim" style="font-size:12px">Zoom meetings and Wispr dictations land on the same timeline as the room, tagged Z and W</span></div>
+  <div class="grid">
+    <section class="card"><h2>Zoom transcript (.vtt)</h2>
+      <div class="row"><input type="file" id="zf" accept=".vtt,.txt"><label class="dim">meeting start <input type="datetime-local" id="zs"></label><button class="primary" id="zgo">Import</button></div>
+      <p class="dim">From the recording's "Audio transcript" download. Leave the start empty if the file name has the date and time (zoom_2026-10-24_09-30.vtt). <span id="zapi"></span></p></section>
+    <section class="card"><h2>Wispr Flow dictations</h2>
+      <div class="row"><input type="file" id="wf" accept=".json,.csv"><button class="primary" id="wgo">Import</button></div>
+      <p class="dim">Export your dictation history (JSON list or CSV with text,timestamp). <span id="wapi"></span></p></section>
+  </div>
+  <section class="card" style="margin-top:12px"><h2>Done</h2><p class="dim">Or drop files into <code id="inbox"></code><code>/zoom</code> or <code>/wispr</code>; they are picked up within a minute.</p><div id="list"></div></section>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,toast}=R;
+async function load(){const r=await api('/api/imports');$('#inbox').textContent=r.inbox;$('#zapi').textContent='API: '+r.zoom_api+'.';$('#wapi').textContent=r.wispr_api+'.';
+  const box=$('#list');box.textContent='';if(!r.imports.length)box.append(el('div','dim','Nothing imported yet.'));
+  r.imports.forEach(x=>{const d=el('div','it');d.append(el('span',null,`${x.kind} · ${x.name}`),el('span','dim',`${x.result.lines} lines${x.result.start?' · '+new Date(x.result.start*1000).toLocaleString():''} · ${new Date(x.created*1000).toLocaleString()}`));box.append(d)})}
+async function send(kind,file,start){if(!file){toast('Pick a file');return}
+  const q=new URLSearchParams({kind,name:file.name});if(start)q.set('start',start);
+  try{const r=await fetch('/api/imports?'+q,{method:'POST',body:await file.text(),headers:{'Content-Type':'text/plain'}});const j=await r.json();if(!r.ok)throw new Error(j.detail||r.status);
+    toast(j.already?'Already imported':`Imported ${j.lines} lines`);load()}catch(e){toast('Failed: '+e.message)}}
+$('#zgo').onclick=()=>send('zoom',$('#zf').files[0],$('#zs').value);$('#wgo').onclick=()=>send('wispr',$('#wf').files[0]);load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

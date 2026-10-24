@@ -1,0 +1,14 @@
+[Unit]
+Description=Ramblr extra mic: stream this machine's mic to gus over the tailnet (B4-19)
+After=pipewire-pulse.service network-online.target tailscaled.service
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/mic.env
+ExecStart=%h/.local/bin/ramblr-mic
+Restart=always
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=default.target

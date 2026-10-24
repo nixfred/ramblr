@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr promises</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.ph{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ph .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.pr{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:start;padding:10px 4px;border-bottom:1px solid #111b2c;font-family:var(--sans)}
+.pr input{width:20px;height:20px;margin-top:3px}.pr b{font-size:15px}.pr .s{color:var(--dim);font-size:13px}.pr .q{color:#9fb;font-size:13px;font-style:italic;margin-top:3px}
+.pr .d{font:12px var(--mono);color:var(--dim);white-space:nowrap}.pr .d.late{color:var(--bad)}.pr.done{opacity:.5}.pr.done b{text-decoration:line-through}
+</style>
+</head>
+<body data-page="promises">
+<main class="page">
+  <div class="ph"><span class="title glitch">WHAT DID I PROMISE</span><label class="dim" style="font-size:12px"><input type="checkbox" id="all"> show done</label><span class="dim" id="who"></span></div>
+  <section class="card" style="margin-top:12px"><div id="list"></div></section>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,post,toast}=R;
+async function load(){
+  const r=await api('/api/promises?include_done='+($('#all').checked?1:0));$('#who').textContent=`your voice: ${r.me.join(', ')} · ${r.overdue} late · ${r.due_today} due today`;
+  const box=$('#list');box.textContent='';if(!r.items.length)box.append(el('div','empty','No open promises. The nightly pass and conversation cards find them.'));
+  r.items.forEach(x=>{const d=el('div','pr'+(x.done_at?' done':''));const cb=document.createElement('input');cb.type='checkbox';cb.checked=!!x.done_at;cb.setAttribute('aria-label','Done');
+    cb.onchange=async()=>{await post(`/api/action-items/${x.id}/done`,{done:cb.checked});toast(cb.checked?'Done':'Reopened');load()};
+    const m=el('div');m.append(el('b',null,x.task));if(x.specifics)m.append(el('div','s',x.specifics));
+    if(x.source_lines[0]){const a=el('a','q','“'+x.source_lines[0].text+'”');a.href=x.link;a.style.display='block';m.append(a)}
+    d.append(cb,m,el('span','d'+(x.overdue?' late':''),x.done_at?'done':x.due?(x.overdue?'late · '+x.due:'due '+x.due):'no date'));box.append(d)});
+}
+$('#all').onchange=load;load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

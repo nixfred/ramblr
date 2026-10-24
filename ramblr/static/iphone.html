@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr iPhone</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.ih .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px;margin-top:12px}
+ol{padding-left:22px;font-family:var(--sans);line-height:1.6}ol li{margin:6px 0}
+code{background:#0a101b;border:1px solid var(--line2);border-radius:5px;padding:1px 5px;font-size:12px;word-break:break-all}
+.qr{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.qr img{width:180px;height:180px;border-radius:12px;border:1px solid var(--line2)}
+.up{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:8px 4px;border-bottom:1px solid #111b2c;font-size:13px;align-items:center}
+.up small{color:var(--dim)}.st-done{color:var(--mint)}.st-error{color:var(--bad)}.st-queued,.st-working,.st-partial{color:var(--amber)}
+.big{font-size:17px;padding:12px 18px}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page="iphone">
+<main class="page">
+  <div class="ih"><span class="title glitch">IPHONE RAMBLE CAPTURE</span></div>
+  <div class="cols">
+    <section class="card">
+      <h2>Install</h2>
+      <div class="qr"><img src="/api/iphone/qr.svg" alt="QR code for this page on the tailnet">
+        <div><p class="dim">Scan on the iPhone (Tailscale must be on), then tap install.</p>
+          <a class="btn primary big" id="inst" href="/iphone/ramblr.shortcut">Install the Ramblr Shortcut</a>
+          <p class="dim" id="instnote"></p></div></div>
+      <h2 style="margin-top:16px">Set it up (two minutes)</h2>
+      <ol>
+        <li>Install <b>Tailscale</b> on the iPhone and sign in to the same tailnet, and keep it connected.</li>
+        <li>Open the QR above on the iPhone and tap <b>Install the Ramblr Shortcut</b>, then <b>Add Shortcut</b>.
+          If there is no signed file yet, build it by hand from the steps below.</li>
+        <li><b>Action Button</b> (iPhone 15 Pro and later): Settings → Action Button → Shortcut → <b>Ramblr</b>.
+          <b>Lock screen</b>: long-press the lock screen → Customize → Lock Screen → add the <b>Shortcuts</b> control → Ramblr.</li>
+        <li>Press it, talk, tap stop. It uploads over the tailnet and shows "Sent to Ramblr". The text lands on Today with a 📱 and the idea card builds about 10 minutes later.</li>
+      </ol>
+      <h2 style="margin-top:16px">Build it by hand</h2>
+      <ol>
+        <li>Shortcuts → <b>+</b> → name it <b>Ramblr</b>.</li>
+        <li>Add <b>Record Audio</b> (Audio Quality: Normal, Start Recording: Immediately, Finish Recording: On Tap).</li>
+        <li>Add <b>Get Contents of URL</b>: URL <code id="url"></code>, Method <b>POST</b>, Request Body <b>File</b> = <i>Recorded Audio</i>,
+          Headers: <code>Authorization</code> = <code>Bearer &lt;key&gt;</code> and <code>Content-Type</code> = <code>audio/mp4</code>.</li>
+        <li>Add <b>Show Notification</b>: "Sent to Ramblr".</li>
+        <li>The key is <code>RAMBLR_UPLOAD_KEY</code> in <code>~/.config/ramblr/secrets.env</code> on gus (it is never shown on this site).</li>
+      </ol>
+    </section>
+    <section class="card">
+      <h2>Try it from this browser</h2>
+      <p class="dim">Pick a recording (m4a, caf or wav, up to <span id="max"></span> MB). It goes through the same NPU pipeline.</p>
+      <input type="file" id="file" accept=".m4a,.caf,.wav,audio/*"> <button class="primary" id="send">Upload</button>
+      <h2 style="margin-top:16px">Recent uploads</h2>
+      <div id="ups"></div>
+    </section>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,toast}=R;
+async function load(){
+  const s=await api('/api/iphone/status');$('#url').textContent=s.upload_url;$('#max').textContent=s.max_mb;
+  if(!s.shortcut){$('#inst').classList.add('dim');$('#inst').removeAttribute('href');$('#instnote').textContent='No signed Shortcut on gus yet: build it by hand (below).'}
+  const u=await api('/api/uploads');const box=$('#ups');box.textContent='';if(!u.length)box.append(el('div','dim','None yet.'));
+  u.forEach(x=>{const r=el('div','up');const t=el('div');t.append(document.createTextNode(`${x.source} · ${new Date((x.recorded_at||x.created)*1000).toLocaleString()}`),el('small',null,` ${(x.bytes/2**20).toFixed(1)} MB${x.duration?' · '+Math.round(x.duration)+' s':''}${x.segments!=null?' · '+x.segments+' lines':''}${x.error?' · '+x.error:''}`));
+    r.append(t,el('span','st-'+x.status,x.status));const a=el('a',null,x.idea_id?'idea →':'');if(x.idea_id)a.href='/ideas';r.append(a);box.append(r)});
+}
+$('#send').onclick=async()=>{const f=$('#file').files[0];if(!f){toast('Pick a file first');return}
+  const ext=(f.name.split('.').pop()||'').toLowerCase();const type=f.type||({m4a:'audio/mp4',caf:'audio/x-caf',wav:'audio/wav'}[ext]||'');
+  try{const r=await fetch('/api/upload?name='+encodeURIComponent(f.name),{method:'POST',headers:{'Content-Type':type},body:f});
+    if(!r.ok)throw new Error(await r.text());toast('Uploaded: transcribing on the NPU');load()}catch(e){toast('Failed: '+e.message)}};
+R.on('upload',load);R.on('idea',load);setInterval(load,8000);load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Ramblr: stream this machine's mic to Ramblr (also starts on boot)
+systemctl --user enable --now ramblr-mic.service && echo "mic ON: streaming to Ramblr"

@@ -1,0 +1,16 @@
+[Unit]
+Description=Ramblr: extra mics from the tailnet (vic, a Pi) -> Silero VAD -> Whisper on the Intel NPU -> SQLite
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.remote
+Environment=PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+Restart=always
+RestartSec=3
+Nice=5
+
+[Install]
+WantedBy=default.target

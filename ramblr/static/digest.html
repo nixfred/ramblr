@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr digest</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.dh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.dh .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff;margin-right:6px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
+.kpi b{display:block;font-size:24px;color:#eaffff}.kpi span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.cols{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px}
+.idea{display:grid;grid-template-columns:52px 1fr;gap:10px;padding:10px 4px;border-bottom:1px solid #111b2c;text-decoration:none;color:var(--fg)}
+.idea .sc{font-size:22px;font-weight:800;color:var(--mint);text-align:center}.idea .sc small{display:block;font-size:10px;color:var(--dim);font-weight:400}
+.idea .tt{font-family:var(--sans)}.idea .tt b{display:block}.idea .tt span{color:var(--dim);font-size:13px}
+.ai{display:grid;grid-template-columns:1fr auto;gap:8px;padding:7px 4px;border-bottom:1px solid #111b2c;font-family:var(--sans);font-size:14px;text-decoration:none;color:var(--fg)}
+.ai small{color:var(--dim);font-family:var(--mono)}.ai.late small{color:var(--bad)}
+.bar{display:grid;grid-template-columns:110px 1fr 60px;gap:8px;align-items:center;font-size:12px;margin:5px 0}
+.bar .t{height:10px;border-radius:5px;background:#0a101b;overflow:hidden}.bar .t i{display:block;height:100%;border-radius:5px}
+.rc{padding:6px 0;border-bottom:1px solid #111b2c;font-family:var(--sans);font-size:14px}.rc b{font:12px var(--mono);color:var(--teal);margin-right:8px}
+.sec{margin-top:12px}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cols{grid-template-columns:1fr}.dh .title{font-size:19px;width:100%}}
+</style>
+</head>
+<body data-page="digest">
+<main class="page">
+  <div class="dh"><span class="title glitch">WEEKLY DIGEST</span>
+    <button id="pw" aria-label="Previous week">&#9664;</button><span id="range" class="dim"></span><button id="nw" aria-label="Next week">&#9654;</button>
+    <span class="dim" style="margin-left:auto;font-size:12px">local page only · nothing is emailed or posted</span></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="cols">
+    <div>
+      <section class="card"><h2>Top ideas</h2><div id="ideas"></div></section>
+      <section class="card sec"><h2>Every day's recap</h2><div id="recaps"></div></section>
+    </div>
+    <div>
+      <section class="card"><h2>Open action items</h2><div id="items"></div></section>
+      <section class="card sec"><h2>Who talked</h2><div id="talk"></div></section>
+      <section class="card sec"><h2>Watched and listened</h2><div id="media"></div></section>
+    </div>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,fmtDur}=R;
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+let end=new URLSearchParams(location.search).get('end')||iso(new Date());
+async function load(){
+  const r=await api('/api/digest?days=7&end='+end);
+  history.replaceState(null,'','/digest'+(end===iso(new Date())?'':'?end='+end));
+  $('#range').textContent=`${r.start} to ${r.end}`;
+  const k=$('#kpis');k.textContent='';
+  [[r.lines,'lines of talk'],[r.ideas.length,'ideas'],[r.action_items.length+(r.overdue?` (${r.overdue} late)`:''),'open action items'],[fmtDur(r.media.tv_secs+r.media.music_secs),'media heard']]
+    .forEach(([v,l])=>{const c=el('div','card kpi');c.append(el('b',null,String(v)),el('span',null,l));k.append(c)});
+  const id=$('#ideas');id.textContent='';if(!r.ideas.length)id.append(el('div','dim','No new ideas this week.'));
+  r.ideas.forEach(i=>{const a=el('a','idea');a.href='/ideas';const sc=el('div','sc',i.score!=null?String(i.score):'·');sc.append(el('small',null,i.verdict||i.status));
+    const tt=el('div','tt');tt.append(el('b',null,i.title),el('span',null,(i.pitch||'')+` · ${new Date(i.created*1000).toLocaleDateString()} · ${i.lines} lines`));a.append(sc,tt);id.append(a)});
+  const it=$('#items');it.textContent='';if(!r.action_items.length)it.append(el('div','dim','Nothing open.'));
+  const today=iso(new Date());
+  r.action_items.forEach(x=>{const a=el('a','ai'+(x.due&&x.due<today?' late':''));a.href=x.link;a.append(el('span',null,x.task+(x.owner?' · '+x.owner:'')),el('small',null,x.due?(x.due<today?'late, ':'due ')+x.due:'no date'));it.append(a)});
+  const tk=$('#talk');tk.textContent='';const mx=Math.max(1,...r.talk.map(t=>t.secs));
+  r.talk.forEach(t=>{const b=el('div','bar');const n=el('span',null,t.name);n.style.color=t.color;const tr=el('div','t');const i=el('i');i.style.width=(100*t.secs/mx)+'%';i.style.background=t.color;tr.append(i);b.append(n,tr,el('span','dim',fmtDur(t.secs)));tk.append(b)});
+  if(!r.talk.length)tk.append(el('div','dim','No talk recorded.'));
+  const md=$('#media');md.textContent='';
+  md.append(el('div',null,`📺 TV ${fmtDur(r.media.tv_secs)} · ♪ music ${fmtDur(r.media.music_secs)} · ${r.media.sessions} session${r.media.sessions===1?'':'s'} heard in the room`));
+  r.media.plays.forEach(p=>md.append(el('div','ai',`▶ ${p.title}${p.artist?' — '+p.artist:''}  (${fmtDur(p.secs)}, ${p.player})`)));
+  r.media.tracks.forEach(t=>md.append(el('div','ai',`♫ ${t.title||'song not identified yet'}${t.artist?' — '+t.artist:''}`)));
+  const rc=$('#recaps');rc.textContent='';if(!r.recaps.length)rc.append(el('div','dim','No recaps yet (the nightly pass writes them at 03:30).'));
+  r.recaps.forEach(h=>{const d=el('a','rc');d.href='/?day='+h.day;d.style.display='block';d.style.textDecoration='none';d.style.color='inherit';d.append(el('b',null,h.day),document.createTextNode(h.headline));rc.append(d)});
+}
+function shift(n){const d=new Date(end+'T12:00');d.setDate(d.getDate()+7*n);end=iso(d);load()}
+$('#pw').onclick=()=>shift(-1);$('#nw').onclick=()=>shift(1);
+window.ramblrCommands=window.ramblrCommands||[];window.ramblrCommands.push({id:'dg-prev',title:'Digest: previous week',run:()=>shift(-1)},{id:'dg-next',title:'Digest: next week',run:()=>shift(1)});
+load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

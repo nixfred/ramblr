@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "nixfred.ramblr",
+  "name": "Ramblr",
+  "version": "0.1.0",
+  "author": "nixfred",
+  "license": "MIT",
+  "description": "Ramblr room transcription on your bar: listening or muted at a glance, which mic, lines today. Click to mute or unmute (muted stops the recorder).",
+  "kinds": ["service", "bar-widget"],
+  "entryPoints": { "service": "Service.qml", "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Ramblr",
+    "description": "A mic dot: teal and pulsing while Ramblr listens, magenta with a slash when muted, amber when it fell back to another mic, dim when the service is down. Click toggles mute.",
+    "category": "AI",
+    "aliases": ["ramblr", "transcription", "mic", "mute", "listening"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": { "intervalSec": 2 },
+    "schema": [
+      { "key": "intervalSec", "type": "integer", "label": "Refresh (seconds)", "description": "How often the bar reads Ramblr's state.", "min": 1, "max": 30, "defaultValue": 2 }
+    ]
+  },
+  "repository": "https://github.com/nixfred/ramblr",
+  "homepage": "https://nixfred.com"
+}

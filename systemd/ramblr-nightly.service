@@ -1,0 +1,14 @@
+[Unit]
+Description=Ramblr: the one nightly batch pass (recap, action items, idea backstop, search index, encrypted backup to whi)
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.nightly
+Environment=PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=3h

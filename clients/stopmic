@@ -1,0 +1,3 @@
+#!/bin/sh
+# Ramblr: stop streaming this machine's mic (stays off after reboot)
+systemctl --user disable --now ramblr-mic.service && echo "mic OFF"

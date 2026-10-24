@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr commands</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.ch{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ch .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.info{border:1px solid var(--line2);border-radius:10px;padding:8px 12px;margin:10px 0;font-size:13px;color:var(--dim)}
+.cmd{display:grid;grid-template-columns:150px 1fr auto;gap:12px;align-items:start;padding:10px 4px;border-bottom:1px solid #111b2c}
+.cmd .t{color:var(--dim);font:12px var(--mono)}.cmd b{color:var(--teal)}.cmd .task{font-family:var(--sans);font-size:15px}
+.cmd .res{color:var(--dim);font:12px var(--mono);margin-top:4px;word-break:break-word}
+.st{font:11px var(--mono);padding:2px 8px;border-radius:99px;border:1px solid var(--line2)}.st.sent{color:var(--mint);border-color:#1f5a46}
+.st.stub,.st.retry,.st.queued,.st.held{color:var(--amber);border-color:#6b5320}.st.forwarded,.st.ready,.st.approved{color:var(--mint);border-color:#1f5a46}.st.upstream-error{color:var(--bad);border-color:#6b2030}
+.cmd button.ok{font:12px var(--mono);margin-top:6px;padding:4px 10px;border-radius:8px;border:1px solid var(--mint);background:transparent;color:var(--mint);cursor:pointer}.st.failed{color:var(--bad);border-color:#6b2030}
+@media(max-width:700px){.cmd{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page="commands">
+<main class="page">
+  <div class="ch"><span class="title glitch">COMMANDS</span><label class="dim" style="font-size:12px;margin-left:auto"><input type="checkbox" id="chime"> soft chime when a command is heard</label></div>
+  <div class="info" id="router"></div>
+  <div class="info">Say <b>"Larry, tell &lt;bot&gt; to &lt;task&gt;"</b>. Ramblr routes it to its voice router on gus (tailnet only). Read-only asks run right away; anything that could send, post, spend, delete or change something is held until you press Approve. Lines from the TV never count.</div>
+  <section class="card"><div id="list"></div></section>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api}=R;
+async function load(){
+  const r=await api('/api/commands');$('#router').textContent='Router: '+r.router;
+  const box=$('#list');box.textContent='';if(!r.commands.length)box.append(el('div','empty','No commands yet.'));
+  r.commands.forEach(c=>{const d=el('div','cmd');d.append(el('div','t',new Date(c.ts*1000).toLocaleString()));
+    const m=el('div');const t=el('div','task');t.append(el('b',null,c.target+': '),document.createTextNode(c.task));m.append(t);
+    m.append(el('div','res',`${c.speaker||''}${c.confidence!=null?' · voice match '+c.confidence:''}${c.tries?' · tries '+c.tries:''}${c.result?' · '+c.result:''}`));
+    const a=el('a',null,'heard: “'+c.phrase+'”');a.href=`/?day=${R.ymd(c.ts)}#seg-${c.segment_id}`;a.style.cssText='display:block;color:var(--dim);font-size:12px;margin-top:4px';m.append(a);
+    if(c.status==='held'){const b=el('button','ok','Approve');b.onclick=async()=>{b.disabled=true;try{const res=await R.post('/api/commands/'+c.command_id+'/approve',{});b.textContent=res.status}catch(e){b.textContent='failed';b.disabled=false}load()};m.append(b)}
+    d.append(m,el('span','st '+c.status,c.status));box.append(d)});
+}
+try{$('#chime').checked=localStorage.getItem('ramblr.chime')==='1'}catch(e){}
+$('#chime').onchange=()=>{try{localStorage.setItem('ramblr.chime',$('#chime').checked?'1':'0')}catch(e){}};
+R.on('command',load);load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

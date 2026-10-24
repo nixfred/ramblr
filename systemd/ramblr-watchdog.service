@@ -1,0 +1,10 @@
+[Unit]
+Description=Ramblr capture watchdog (speech but no lines, or a stuck loop: fall back to whisper-base.en and restart once, alert Fred)
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/ramblr/config.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.watchdog tick
+Environment=PYTHONUNBUFFERED=1
+Nice=10

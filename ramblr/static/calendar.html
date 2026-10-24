@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr calendar</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.mhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.mhead .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff;margin-right:8px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--dim);font-size:12px;margin-left:auto}
+.legend span b{margin-right:4px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.dow{font-size:11px;letter-spacing:.18em;color:var(--dim);text-align:center;padding:4px 0}
+.cell{position:relative;min-height:104px;border-radius:12px;border:1px solid var(--line);background:var(--panel);padding:8px;display:flex;flex-direction:column;
+  align-items:stretch;text-align:left;gap:4px;cursor:pointer;overflow:hidden;transition:border-color .15s,transform .15s}
+.cell:hover,.cell:focus-visible{border-color:var(--teal);transform:translateY(-1px)}
+.cell.out{opacity:.25;pointer-events:none}
+.cell.today{border-color:var(--mag);box-shadow:var(--glowm)}
+.cell .heatbg{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 110%,var(--hc,#2de2e6) 0%,transparent 70%);opacity:var(--h,0)}
+.cell .n{position:relative;font-weight:800;font-size:15px}
+.cell .tt{position:relative;font-size:11px;color:var(--dim)}
+.cell .ic{position:relative;margin-top:auto;display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
+.ic .i{color:var(--teal)}.ic .a{color:var(--mint)}.ic .b{color:var(--amber)}.ic .s{color:var(--mag)}
+.sel{outline:2px solid var(--teal);outline-offset:1px}
+#peek{margin-top:14px}
+#peek .hl{font-family:var(--sans);font-size:16px;color:#fff}
+@media(max-width:820px){
+  .cal{gap:4px}.cell{min-height:64px;padding:5px;border-radius:9px}.cell .tt{display:none}.cell .n{font-size:13px}.cell .ic{font-size:10px;gap:3px}
+  .mhead .title{font-size:19px;width:100%}.legend{margin-left:0}
+}
+</style>
+</head>
+<body data-page="calendar">
+<main class="page">
+  <div class="mhead">
+    <span class="title glitch" id="mtitle">CALENDAR</span>
+    <button id="pm" aria-label="Previous month">&#9664;</button>
+    <button id="tm">This month</button>
+    <button id="nm" aria-label="Next month">&#9654;</button>
+    <div class="legend"><span><b class="ic"><span class="s">●</span></b>recap</span><span><b style="color:var(--teal)">✦</b>ideas</span><span><b style="color:var(--mint)">✓</b>action items</span><span>glow = talk time</span></div>
+  </div>
+  <div class="cal" id="cal" role="grid" aria-label="Month"></div>
+  <section class="card" id="peek" hidden></section>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,fmtDur}=R;
+const thisMonth=()=>iso(new Date()).slice(0,7);
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+let month=new URLSearchParams(location.search).get('m')||thisMonth(), data=null, focusDay=null;
+async function load(){
+  data=await api('/api/calendar?month='+month);
+  const [y,m]=month.split('-').map(Number);
+  $('#mtitle').textContent=new Date(y,m-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'}).toUpperCase();
+  const box=$('#cal');box.textContent='';
+  ['MON','TUE','WED','THU','FRI','SAT','SUN'].forEach(d=>box.append(el('div','dow',d)));
+  const first=new Date(y,m-1,1),start=new Date(first);start.setDate(1-((first.getDay()+6)%7));
+  const by=Object.fromEntries(data.days.map(d=>[d.day,d]));const today=iso(new Date());
+  const mx=Math.max(data.max_secs,600);
+  for(let i=0;i<42;i++){
+    const dt=new Date(start);dt.setDate(start.getDate()+i);const key=iso(dt);const inm=dt.getMonth()===m-1;
+    if(i>=35&&!inm&&dt.getDay()===1)break;
+    const x=by[key]||{secs:0,lines:0,ideas:0,actions:0,summary:false};
+    const c=el('button','cell'+(inm?'':' out')+(key===today?' today':''));c.dataset.day=key;c.setAttribute('role','gridcell');
+    c.setAttribute('aria-label',`${key}: ${x.lines} lines, ${fmtDur(x.secs)} of talk, ${x.ideas} ideas, ${x.actions} action items`);
+    const hb=el('span','heatbg');hb.style.setProperty('--h',x.secs?Math.min(.85,.18+.67*Math.sqrt(x.secs/mx)):0);hb.style.setProperty('--hc',x.ideas?'#2de2e6':'#14a6b0');
+    c.append(hb,el('span','n',String(dt.getDate())),el('span','tt',x.lines?`${fmtDur(x.secs)} · ${x.lines} lines`:''));
+    const ic=el('span','ic');
+    if(x.summary)ic.append(el('span','s','●'));
+    if(x.ideas)ic.append(el('span','i','✦'+x.ideas));if(x.actions)ic.append(el('span','a','✓'+x.actions));
+    c.append(ic);
+    c.onclick=()=>{location.href=key===today?'/':'/?day='+key};
+    c.onfocus=()=>{focusDay=key;peek(key,x)};c.onmouseenter=()=>peek(key,x);
+    box.append(c);
+  }
+  history.replaceState(null,'','/calendar'+(month===thisMonth()?'':'?m='+month));
+  const f=box.querySelector(`[data-day="${focusDay}"]`);if(f)f.focus();
+}
+let pt;async function peek(day,x){
+  clearTimeout(pt);pt=setTimeout(async()=>{const p=$('#peek');if(!x.lines&&!x.summary){p.hidden=true;return}
+    p.hidden=false;p.textContent='';p.append(el('h2',null,new Date(day+'T12:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})));
+    try{const s=await api('/api/summaries/'+day);if(s.summary)p.append(el('div','hl',s.summary.headline||''));
+      p.append(el('div','dim',`${x.lines} lines · ${fmtDur(x.secs)} of talk · ${x.ideas} ideas · ${x.actions} action items · Enter or click to open`))}catch(e){}},120);
+}
+function shift(n){const [y,m]=month.split('-').map(Number);const d=new Date(y,m-1+n,1);month=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;load()}
+$('#pm').onclick=()=>shift(-1);$('#nm').onclick=()=>shift(1);$('#tm').onclick=()=>{month=thisMonth();load()};
+document.addEventListener('keydown',e=>{
+  if(e.target.closest('input,textarea,#kpal'))return;
+  const cells=[...document.querySelectorAll('.cell:not(.out)')];let i=cells.indexOf(document.activeElement);
+  const mv={ArrowRight:1,ArrowLeft:-1,ArrowDown:7,ArrowUp:-7}[e.key];
+  if(mv){e.preventDefault();if(i<0){cells[0]&&cells[0].focus();return}const j=i+mv;if(j<0){shift(-1)}else if(j>=cells.length){shift(1)}else cells[j].focus()}
+  if(e.key==='PageUp'){e.preventDefault();shift(-1)}if(e.key==='PageDown'){e.preventDefault();shift(1)}
+});
+window.ramblrCommands=window.ramblrCommands||[];
+window.ramblrCommands.push({id:'cal-prev',title:'Previous month',hint:'PageUp',run:()=>shift(-1)},{id:'cal-next',title:'Next month',hint:'PageDown',run:()=>shift(1)});
+R.on('summary',load);R.on('idea',()=>load());
+load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

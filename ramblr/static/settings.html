@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ramblr settings</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+:root{--warn:#f5b85a}
+*{box-sizing:border-box}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650}.brand img{width:28px;height:28px}
+.spacer{flex:1}
+a.nav{color:var(--teal);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--panel)}
+button{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;min-height:42px}
+button:hover{border-color:var(--teal)}button:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+button.on{background:#4a0e33;border-color:var(--mag);color:#fff}
+main{display:flex;flex-direction:column;gap:16px}
+@media(min-width:1100px){main.page{display:grid;grid-template-columns:1.2fr 1fr;align-items:start;max-width:1500px!important}main.page>section:first-child{grid-row:span 3}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+h2{margin:0 0 8px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal)}
+.mic{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer;background:#0d1527}
+.mic:hover{border-color:var(--teal)}.mic.rec{box-shadow:inset 3px 0 0 var(--mint)}.mic.off{opacity:.55}
+.mic code{color:var(--dim);font-size:12px;word-break:break-all}
+.mic .st,#rmics .st{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.mic .st.rec,#rmics .st.rec{color:var(--mint);border-color:#1f5a46}.mic .st.gone{color:var(--warn);border-color:#6b5320}
+.warn{color:var(--warn);margin:6px 0}
+.note{color:var(--dim);font-size:13px}
+.qrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.qrow label{display:flex;gap:6px;align-items:center}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}dt{color:var(--dim)}dd{margin:0;word-break:break-word}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#0e4a55;border:1px solid var(--teal);padding:8px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:20}#toast.on{opacity:1}
+</style>
+</head>
+<body data-page="settings">
+<script src="/static/app.js"></script>
+<main class="page" style="max-width:900px">
+  <section>
+    <h2>Microphone</h2>
+    <div id="warn" class="warn" hidden></div>
+    <div id="mics"></div>
+    <p class="note">Ramblr records the mic you pick with its own stream. The system default input is never changed, so
+    dictation keeps its mic. If the chosen mic is unplugged, Ramblr falls back to the home mic and returns by itself
+    when it is back. Ctrl+K, "Choose microphone" does the same from any page.</p>
+    <div id="rmics" class="note"></div>
+  </section>
+  <section>
+    <h2>Vocabulary</h2>
+    <p class="note">Learned from your fixes (double-click a line's words on Today) and words you add. New lines are
+    corrected right after transcription; the original text is always kept.</p>
+    <div class="qrow"><input id="vw" placeholder="Spell it like this (e.g. Omarchy)" aria-label="word"> <input id="vwrong" placeholder="when Whisper writes (optional)" aria-label="misheard as"> <button id="vadd">Add</button></div>
+    <div id="vlist" style="max-height:220px;overflow:auto;margin-top:8px"></div>
+  </section>
+  <section>
+    <h2>Quiet hours</h2>
+    <div class="qrow"><label><input type="checkbox" id="qon"> flag lines spoken between</label>
+      <input type="time" id="qs" aria-label="quiet hours start"> and <input type="time" id="qe" aria-label="quiet hours end">
+      <button id="qsave">Save</button></div>
+    <p class="note">A flag only: recording does not change. Lines in quiet hours get a ☾ and the timeline is striped.</p>
+  </section>
+  <section>
+    <h2>Nightly pass and backup</h2>
+    <dl id="night"></dl>
+  </section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await r.text())||r.status);return r.json()};
+const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+const toast=m=>R.toast(m);
+function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+async function loadMics(){
+  const m=await api('/api/mics');const box=$('#mics');box.textContent='';
+  $('#warn').hidden=!m.warning;$('#warn').textContent=m.warning?'⚠ '+m.warning:'';
+  m.mics.forEach(x=>{const r=el('div','mic'+(x.recording?' rec':'')+(x.available?'':' off'));r.tabIndex=0;r.setAttribute('role','button');
+    const rd=el('span',null,x.chosen?'◉':'○');rd.style.cssText='font-size:20px;color:'+(x.chosen?'var(--mint)':'var(--dim)');
+    const t=el('div');t.append(el('div',null,x.description+(x.home?'  (home mic)':'')+(x.default?'  · system default':'')),el('code',null,x.name));
+    const st=el('span','st'+(x.recording?' rec':x.available?'':' gone'),m.muted&&x.chosen?'muted':x.recording?'recording':x.available?(x.state||'available').toLowerCase():'unplugged');
+    r.append(rd,t,st);
+    const choose=async()=>{try{const res=await post('/api/mics',{source:x.home?null:x.name});const rec=res.mics.find(y=>y.recording);toast('Recording: '+(rec?rec.description:'nothing (muted?)'));loadMics()}catch(e){toast('Failed: '+e.message)}};
+    r.onclick=choose;r.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose()}};box.append(r)});
+}
+async function loadRemote(){
+  const r=await api('/api/mics/remote');const b=$('#rmics');b.textContent='';
+  const ds=Object.entries(r.devices);
+  b.append(el('b',null,'Remote mics (tailnet): '),document.createTextNode(r.service!=='running'?'ramblr-mics is not running':
+    ds.length?'':'none connected since the service started. Run clients/ramblr-mic on vic or a Pi.'));
+  ds.forEach(([d,x])=>{const s=el('span','st'+(x.connected?' rec':''),`🎙 ${d} · ${x.connected?'streaming':'last '+new Date(x.last*1000).toLocaleTimeString()} · ${x.lines} lines`);s.style.marginRight='8px';b.append(s)});
+}
+async function loadStatus(){
+  const n=await api('/api/nightly');const dl=$('#night');dl.textContent='';
+  const add=(k,v)=>{dl.append(el('dt',null,k),el('dd',null,v))};
+  const last=n.runs[0];add('Last nightly run',last?`${new Date(last.started*1000).toLocaleString()} · ${last.day} · ${last.status}`:'not yet');
+  add('Schedule','03:30 every night (ramblr-nightly.timer)');
+  const bk=n.backup;add('Last backup',bk?`${bk.at} · ${bk.host}:${bk.path} · ${bk.bytes} bytes · ${bk.verified?'checksum verified':'NOT verified'}`:'not yet');
+}
+R.on('status',()=>loadMics());
+async function loadQuiet(){const q=await api('/api/quiet');$('#qon').checked=q.enabled;$('#qs').value=q.start;$('#qe').value=q.end}
+$('#qsave').onclick=async()=>{try{await post('/api/quiet',{enabled:$('#qon').checked,start:$('#qs').value,end:$('#qe').value});toast('Quiet hours saved (flag only)')}catch(e){toast('Failed: '+e.message)}};
+async function loadVocab(){const v=await api('/api/vocab');const box=$('#vlist');box.textContent='';
+  if(!v.entries.length)box.append(el('div','note','Nothing yet. Fix a line on Today and the changed words show up here.'));
+  v.entries.forEach(x=>{const r=el('div','mic');r.style.gridTemplateColumns='1fr auto auto';r.style.cursor='default';
+    r.append(el('div',null,`${x.wrong} → ${x.right}`),el('span','st',`${x.source} · ${x.hits} hit${x.hits===1?'':'s'}`));
+    const b=el('button',null,x.active?'Turn off':'Turn on');b.onclick=async()=>{await post('/api/vocab',{id:x.id,active:!x.active});loadVocab()};r.append(b);if(!x.active)r.classList.add('off');box.append(r)})}
+$('#vadd').onclick=async()=>{const w=$('#vw').value.trim();if(!w)return;try{await post('/api/vocab',{word:w,wrong:$('#vwrong').value.trim()||null});$('#vw').value='';$('#vwrong').value='';toast('Added');loadVocab()}catch(e){toast('Failed: '+e.message)}};
+loadVocab();loadQuiet();loadMics();loadRemote();loadStatus();setInterval(loadMics,10000);setInterval(loadRemote,15000);
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

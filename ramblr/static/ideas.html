@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ramblr ideas</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+:root{--warn:#f5b85a}
+*{box-sizing:border-box}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650}.brand img{width:28px;height:28px}
+.spacer{flex:1}
+a.nav{color:var(--teal);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--panel)}
+button,select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--teal)}button:disabled{opacity:.5;cursor:default}
+button:focus-visible,a:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+button.primary{background:#0e4a55;border-color:var(--teal);color:#fff;font-weight:600}
+button.doit{background:linear-gradient(135deg,#0e6b54,#0e4a55);border:1px solid var(--mint);color:#fff;font-weight:800;letter-spacing:.06em;padding:12px 26px;font-size:17px;border-radius:12px;box-shadow:0 0 18px #7ff9bc33}
+button.doit:hover{box-shadow:0 0 26px #7ff9bc66}
+main{max-width:1000px;margin:0 auto;padding:12px 14px 90px;display:flex;flex-direction:column;gap:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;position:relative;overflow:hidden}
+.card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(var(--mint),var(--teal))}
+.card.dismissed{opacity:.55}
+.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:4px}
+.chip{font-size:12px;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+.chip.ok{color:var(--mint);border-color:#1f5a46}.chip.warn{color:var(--warn);border-color:#6b5320}.chip.bad{color:var(--bad);border-color:#6b2030}
+h2{margin:6px 0 2px;font-size:24px;line-height:1.2;color:#fff}
+.pitch{color:var(--mint);font-size:16px;margin:0 0 12px}
+h3{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin:18px 0 6px}
+p{margin:4px 0}
+.panels{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:700px){.panels{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:960px){.panels{grid-template-columns:repeat(3,1fr)}}
+.pn{border:1px solid var(--line);border-radius:12px;background:#0d1527;overflow:hidden}
+.img{aspect-ratio:16/10;border-bottom:1px dashed #2a3b5c;display:flex;align-items:center;justify-content:center;color:#3c4d70;font-size:12px;letter-spacing:.1em;background:repeating-linear-gradient(135deg,#0d1527,#0d1527 10px,#101b31 10px,#101b31 20px)}
+.img.art{background:#f4f1ea}.img.art img{width:100%;height:100%;object-fit:contain;display:block}
+.pn .b{padding:10px 12px}.pn .n{color:var(--mint);font-weight:700;font-size:12px}.pn .cap{font-weight:650;margin:2px 0}.pn .sc{color:var(--dim);font-size:13px}
+.mocks{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:900px){.mocks{grid-template-columns:repeat(2,1fr)}}
+.mk{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0d1527}
+.mk .cap{padding:8px 12px;font-weight:650}.mk .cap small{color:var(--dim);font-weight:400}
+.frame{position:relative;width:100%;aspect-ratio:960/600;overflow:hidden;background:#fff}
+.frame iframe{position:absolute;left:0;top:0;width:960px;height:600px;border:0;transform-origin:0 0;pointer-events:none}
+.frame img{position:absolute;inset:0;width:100%;height:100%;display:none;object-fit:cover}
+@media(max-width:699px){.frame iframe{display:none}.frame img{display:block}}
+.two{display:grid;grid-template-columns:1fr;gap:14px}@media(min-width:700px){.two{grid-template-columns:1fr 1fr}}
+ul{margin:4px 0;padding-left:20px}li{margin:2px 0}
+.q{border-left:3px solid var(--teal);padding:4px 10px;margin:6px 0;color:#c4d2ea;font-style:italic}.q small{color:var(--dim);font-style:normal}
+.score{display:flex;gap:14px;align-items:center;margin-top:8px}
+.big{font-size:38px;font-weight:800;color:var(--mint);line-height:1}.verdict{font-weight:700}
+details{margin-top:12px}summary{cursor:pointer;color:var(--teal)}
+.raw .l{display:grid;grid-template-columns:70px 120px 1fr;gap:8px;padding:2px 0;font-size:14px}.raw .t{color:var(--dim);font-variant-numeric:tabular-nums}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.empty{color:var(--dim);text-align:center;padding:60px 0}
+article.card>h2{font-size:26px;letter-spacing:.01em;text-transform:none;color:#fff;font-weight:800;margin:6px 0 2px}
+.ihead{max-width:1000px;margin:14px auto 0;padding:0 14px;display:flex;align-items:center;gap:10px}
+.ihead .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.card{background:linear-gradient(180deg,var(--panel),var(--bg2))}
+.card:before{background:linear-gradient(var(--teal),var(--mag))}
+h2{font-family:var(--sans)}p,li,.pitch,.q,.pn .sc,.pn .cap{font-family:var(--sans)}
+button.doit{background:linear-gradient(135deg,#4a0e33,#0a3c44);border:1px solid var(--mag);box-shadow:0 0 18px #ff3ea533}
+button.doit:hover{box-shadow:0 0 28px #ff3ea566}
+main{padding-bottom:110px!important}
+.brief{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#0d1527}
+.brief label{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);margin:10px 0 4px}
+.brief textarea{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical}
+.brief textarea:focus{outline:2px solid var(--teal)}
+.brief .row{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--mint);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}@keyframes s{to{transform:rotate(360deg)}}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#0e4a55;border:1px solid var(--teal);padding:8px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:20}#toast.on{opacity:1}
+</style>
+</head>
+<body data-page="ideas">
+<div class="ihead"><span class="title glitch">IDEAS</span><span class="spacer"></span>
+  <select id="filter" aria-label="filter"><option value="open">Active</option><option value="hot">Hottest</option><option value="review">Weekly review</option><option value="all">All</option><option value="done-it">Done it</option><option value="shipped">Shipped</option><option value="dismissed">Dismissed</option></select></div>
+<main id="cards"></main>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script>
+const $=s=>document.querySelector(s);let IDEAS=[];
+const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok)throw new Error((await r.text())||r.status);return r.json()};
+const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2000)}
+function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+function sec(title,node){const f=document.createDocumentFragment();f.append(el('h3',null,title),node);return f}
+function list(a){const u=el('ul');(a||[]).forEach(x=>u.append(el('li',null,x)));return u}
+function render(){
+  const f=$('#filter').value,box=$('#cards');box.textContent='';
+  let vis;
+  if(f==='review'){const since=Date.now()/1000-28*86400;vis=IDEAS.filter(i=>(i.status==='later'||i.status==='dismissed')&&Math.max(i.created,i.last_mention||0)>=since).sort((a,b)=>(b.heat||0)-(a.heat||0));
+    box.append(el('div','empty','Weekly review: ideas you parked or dismissed in the last 4 weeks, hottest first. Revive anything still pulling at you.'));}
+  else if(f==='hot')vis=IDEAS.filter(i=>i.status!=='dismissed').sort((a,b)=>(b.heat||0)-(a.heat||0));
+  else vis=IDEAS.filter(i=>f==='all'||(f==='open'?(i.status==='new'||i.status==='later'):i.status===f));
+  if(!vis.length){box.append(el('div','empty','No ideas here yet. Say "Larry, I have an idea..." or select lines on the Transcript page and press Make idea.'));return}
+  vis.forEach(i=>box.append(card(i)));requestAnimationFrame(fit);
+}
+function card(i){
+  const c=el('article','card'+(i.status==='dismissed'?' dismissed':''));c.dataset.id=i.id;
+  const top=el('div','top');
+  top.append(el('span','chip '+(i.status==='done-it'||i.status==='shipped'?'ok':i.status==='later'?'warn':''),i.status==='shipped'?'🚀 shipped':i.status));
+  top.append(el('span','chip',i.source==='trigger'?'spoken':'from selection'));
+  const last=i.versions[i.versions.length-1];
+  if(last&&last.status==='building')top.append(Object.assign(el('span','chip warn'),{innerHTML:'<span class="spin"></span>building storyboard'}));
+  if(last&&last.status==='error')top.append(el('span','chip bad','last build failed'));
+  if(i.open)top.append(el('span','chip warn','still listening'));
+  if(i.webhook_state)top.append(el('span','chip '+(i.webhook_state==='sent'?'ok':i.webhook_state==='failed'?'bad':'warn'),i.webhook_state));
+  if(i.heat!=null)top.append(el('span','chip m',`heat ${i.heat}${i.mentions?' · came up '+i.mentions+'×':''}`));
+  if(i.lineage&&i.lineage.length)top.append(el('span','chip',`pitched before ×${i.lineage.length}`));
+  c.append(top);
+  const sb=i.storyboard,b=sb&&sb.body;
+  c.append(el('h2',null,b?b.title:(i.title||'Idea')));
+  if(b){
+    c.append(el('p','pitch',b.pitch));
+    const two=el('div','two');
+    const p1=el('div');p1.append(sec('Problem',el('p',null,b.problem.text)),el('p',null,'For: '+b.problem.for_whom));
+    const p2=el('div');p2.append(sec('Vision',el('p',null,b.vision)));
+    two.append(p1,p2);c.append(two);
+    const pn=el('div','panels');
+    b.panels.forEach(p=>{const d=el('div','pn');let im;
+      if(p.image){im=el('div','img art');const pic=document.createElement('img');pic.loading='lazy';pic.src=p.image;pic.alt='Sketch for panel '+p.n+': '+p.caption;im.append(pic)}
+      else{im=el('div','img',b.art_error?'NO SKETCH':'SKETCH PENDING '+p.n);im.setAttribute('role','img');im.setAttribute('aria-label',(b.art_error?'no sketch: '+b.art_error:'sketch pending')+' for panel '+p.n);if(b.art_error)im.title=b.art_error}
+      const bd=el('div','b');bd.append(el('div','n','PANEL '+p.n),el('div','cap',p.caption),el('div','sc',p.scene));d.append(im,bd);pn.append(d)});
+    c.append(sec('Storyboard',pn));
+    if(b.mockups&&b.mockups.length){
+      const mg=el('div','mocks');
+      b.mockups.forEach(m=>{const t=el('div','mk');const fr=el('div','frame');
+        const ifr=document.createElement('iframe');ifr.setAttribute('sandbox','');ifr.setAttribute('loading','lazy');ifr.setAttribute('referrerpolicy','no-referrer');ifr.title='Mockup: '+m.title;ifr.src=`/api/storyboards/${sb.id}/mockups/${m.n}`;
+        const im=document.createElement('img');im.loading='lazy';im.alt='Mockup: '+m.title;im.src=`/api/storyboards/${sb.id}/mockups/${m.n}/thumb.png`;
+        fr.append(ifr,im);const cp=el('div','cap',m.title+' ');cp.append(el('small',null,'mockup '+m.n));t.append(fr,cp);mg.append(t)});
+      c.append(sec('Mockups',mg));
+    }else if(b.mockup_error){c.append(sec('Mockups',el('p','chip bad','mockups failed: '+b.mockup_error)))}
+    const ft=el('div','two');
+    const m=el('div');m.append(sec('MVP',list(b.features.mvp)));const l=el('div');l.append(sec('Later',list(b.features.later)));ft.append(m,l);c.append(ft);
+    const bl=el('div');['machine','who','effort','stack'].forEach(k=>{if(b.build[k])bl.append(el('p',null,k[0].toUpperCase()+k.slice(1)+': '+b.build[k]))});c.append(sec('How it gets built',bl));
+    const rq=el('div','two');const r1=el('div');r1.append(sec('Risks',list(b.risks)));const r2=el('div');r2.append(sec('Open questions',list(b.open_questions)));rq.append(r1,r2);c.append(rq);
+    const qs=el('div');b.quotes.forEach(q=>{const d=el('div','q',q.text+' ');d.append(el('small',null,'— '+q.speaker+' '+q.ts));qs.append(d)});c.append(sec('What you actually said',qs));
+    const fs=el('ol');b.first_steps.forEach(s=>fs.append(el('li',null,s)));c.append(sec('First 3 steps',fs));
+    const sc=el('div','score');sc.append(el('div','big',b.score.value+'/10'));const w=el('div');w.append(el('div','verdict',b.score.verdict),el('div',null,b.score.why));sc.append(w);c.append(sec('Gut check',sc));
+    c.append(el('p','chip',`storyboard v${sb.version} · ${sb.generator} · ${sb.model} · ${sb.latency_s}s`));
+  }else if(!(last&&last.status==='building')){
+    c.append(el('p','pitch','No storyboard yet. '+(i.source==='trigger'&&!i.open?'It builds on its own after a quiet period, or build it now.':'')));
+  }
+  const raw=el('details','raw');raw.append(el('summary',null,`Here's what I heard (${i.lines.length} line${i.lines.length===1?'':'s'})`));
+  i.lines.forEach(l=>{const r=el('div','l');const w=el('span',null,l.speaker);w.style.color=l.color||'#8b97ad';if(!l.speaker_named)w.style.fontStyle='italic';r.append(el('span','t',l.t),w,el('span',null,l.text));raw.append(r)});c.append(raw);
+  c.append(briefBox(i));
+  if(i.lineage&&i.lineage.length){const lg=el('div');lg.append(el('h3',null,'Pitched before'));
+    i.lineage.forEach(x=>lg.append(el('div','chip',`${x.title} · ${new Date(x.created*1000).toLocaleDateString()} · ${x.status} · match ${x.similarity}`)));c.append(lg)}
+  if(i.repo_url||i.status==='shipped'){const sh=el('div');sh.append(el('h3',null,'Shipped'));const a=el('a',null,i.repo_url||'(no repo link yet)');if(i.repo_url){a.href=i.repo_url;a.target='_blank';a.rel='noopener'}
+    sh.append(a,el('span','chip ok',' '+(i.shipped_at?new Date(i.shipped_at*1000).toLocaleDateString():'')));c.append(sh)}
+  const a=el('div','actions');
+  const building=last&&last.status==='building';
+  const bb=el('button','primary',sb?'Rebuild (new version)':'Build idea now');bb.disabled=!!building||i.build_requested;
+  bb.onclick=async()=>{bb.disabled=true;try{await post(`/api/ideas/${i.id}/build`,{rebuild:!!sb});toast('Building...')}catch(e){toast('Failed: '+e.message);bb.disabled=false}};
+  a.append(bb);
+  if(sb&&i.versions.filter(v=>v.status==='ok').length>1){const s=el('select');i.versions.filter(v=>v.status==='ok').forEach(v=>{const o=el('option',null,'v'+v.version);o.value=v.version;if(v.version===sb.version)o.selected=true;s.append(o)});
+    s.onchange=async()=>{const x=await api(`/api/ideas/${i.id}?v=${s.value}`);const k=IDEAS.findIndex(y=>y.id===i.id);IDEAS[k]=x;render()};a.append(s)}
+  a.append(el('div','spacer'));
+  const lt=el('button',null,i.status==='later'?'Back to new':'Later');lt.onclick=()=>setStatus(i.id,i.status==='later'?'new':'later');
+  const dm=el('button',null,i.status==='dismissed'?'Restore':'Dismiss');dm.onclick=()=>setStatus(i.id,i.status==='dismissed'?'new':'dismissed');
+  const di=el('button','doit','DO IT');di.disabled=i.status==='done-it'||i.webhook_state==='sent';
+  di.onclick=async()=>{di.disabled=true;try{const r=await post(`/api/ideas/${i.id}/doit`);toast(r.webhook_state==='sent'?'Sent':r.webhook_state==='pending webhook'?'Queued: pending webhook':'Send failed, retry')}catch(e){toast('Failed: '+e.message)}di.disabled=false};
+  const xp=el('button',null,'𝕏 Draft post');xp.title='Drafts only: Ramblr never posts';xp.onclick=async()=>{xp.disabled=true;xp.textContent='Drafting…';
+    try{const r=await post(`/api/ideas/${i.id}/xpost`);toast(`${r.made} X draft${r.made===1?'':'s'} on the Drafts page`)}catch(e){toast('Failed: '+e.message)}xp.disabled=false;xp.textContent='𝕏 Draft post'};
+  const sp=el('button',null,i.status==='shipped'?'Shipped ✓':'Mark shipped');sp.onclick=async()=>{const u=prompt('Repo link (https://…), or leave empty',i.repo_url||'');if(u===null)return;
+    try{await post(`/api/ideas/${i.id}/shipped`,{repo_url:u.trim()});toast('Shipped')}catch(e){toast('Failed: '+e.message)}};
+  a.append(lt,dm,xp,sp,di);c.append(a);
+  return c;
+}
+function briefBox(i){
+  const b=i.brief||{gist:'',problem:'',features:[],open_questions:[],quotes:[],edited:false};
+  const d=el('details','brief');d.open=!!b.edited;
+  d.append(el('summary',null,'Cleaned up'+(b.edited?` (edited v${b.version})`:' (editable brief)')));
+  const fields=[['gist','Gist',1],['problem','Problem',0],['features','Rough features (one per line)',0],['open_questions','Open questions (one per line)',0],['quotes','Best verbatim quotes (one per line)',0]];
+  const inputs={};
+  fields.forEach(([k,label,small])=>{const l=el('label',null,label);const t=document.createElement('textarea');t.rows=small?2:Math.min(8,Math.max(3,(Array.isArray(b[k])?b[k].length:1)+1));
+    t.value=Array.isArray(b[k])?b[k].join('\n'):(b[k]||'');t.setAttribute('aria-label',label);inputs[k]=t;d.append(l,t)});
+  const row=el('div','row');const sv=el('button','primary','Save brief');
+  sv.onclick=async()=>{sv.disabled=true;const body={};fields.forEach(([k])=>{const v=inputs[k].value;body[k]=(k==='gist'||k==='problem')?v:v.split('\n').map(x=>x.trim()).filter(Boolean)});
+    try{const r=await post(`/api/ideas/${i.id}/brief`,body);toast('Saved brief v'+r.version)}catch(e){toast('Failed: '+e.message)}sv.disabled=false};
+  row.append(sv,el('span','chip',b.edited?'DO IT sends this edited brief':'DO IT sends this brief (from the storyboard until you edit it)'));d.append(row);
+  return d;
+}
+async function setStatus(id,st){try{await post(`/api/ideas/${id}/status`,{status:st})}catch(e){toast('Failed: '+e.message)}}
+function fit(){document.querySelectorAll('.frame').forEach(f=>{const i=f.querySelector('iframe');if(i)i.style.transform='scale('+(f.clientWidth/960)+')'})}
+new ResizeObserver(fit).observe(document.body);
+async function load(){IDEAS=await api('/api/ideas');render()}
+async function refresh(id){try{const x=await api('/api/ideas/'+id);const sb=IDEAS.findIndex(y=>y.id===id);if(sb<0)IDEAS.unshift(x);else IDEAS[sb]=x;IDEAS.sort((a,b)=>b.created-a.created);render()}catch(e){load()}}
+$('#filter').onchange=render;
+R.on('idea',d=>refresh(d.id));R.on('reconnect',load);
+load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

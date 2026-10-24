@@ -1,0 +1,17 @@
+[Unit]
+Description=Ramblr voice command router (B3-14): 127.0.0.1 + tailnet IP only, actions held for Fred's yes
+After=tailscaled.service network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.router
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=default.target

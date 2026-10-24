@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr brief</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.bh{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.bh .title{font-size:28px;font-weight:800;letter-spacing:.06em;color:#eaffff}
+.bh .w{color:var(--teal);font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}
+.big{font-size:30px;font-weight:800;color:#eaffff}.kl{color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+.li{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:7px 2px;border-bottom:1px solid #111b2c;font-family:var(--sans);font-size:14px;text-decoration:none;color:var(--fg)}
+.li .t{color:var(--dim);font:12px var(--mono)}.late{color:var(--bad)}
+.hl{font-family:var(--sans);font-size:16px;color:#fff;line-height:1.4}
+.span2{grid-column:span 2}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.span2{grid-column:auto}}
+</style>
+</head>
+<body data-page="brief">
+<main class="page">
+  <div class="bh"><span class="title glitch" id="date">GOOD MORNING</span><span class="w" id="weather"></span></div>
+  <div class="grid">
+    <section class="card"><div class="kl">promises due today</div><div class="big" id="due">–</div><div class="dim" id="dsub"></div></section>
+    <section class="card"><div class="kl">drafts waiting</div><div class="big" id="drafts">–</div><a href="/drafts" class="dim">open drafts →</a></section>
+    <section class="card"><div class="kl">open goals · ideas to review</div><div class="big" id="goals">–</div><a href="/insights" class="dim">insights →</a></section>
+    <section class="card span2"><h2>Today's calendar</h2><div id="cal"></div></section>
+    <section class="card"><h2>Ideas heating up</h2><div id="hot"></div></section>
+    <section class="card span2"><h2>Yesterday</h2><div id="yday"></div></section>
+    <section class="card"><h2>Promises due or late</h2><div id="prom"></div></section>
+    <section class="card span2"><h2>Latest conversations</h2><div id="cards"></div></section>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api}=R;
+const hm=ts=>new Date(ts*1000).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+async function load(){
+  const b=await api('/api/brief');$('#date').textContent=b.date.toUpperCase();$('#weather').textContent=b.weather||'';
+  $('#due').textContent=b.due_today;$('#dsub').textContent=`${b.overdue} late · ${b.open_promises} open in total`;
+  $('#drafts').textContent=b.drafts_waiting;$('#goals').textContent=`${b.goals_open} · ${b.review}`;
+  const cal=$('#cal');cal.textContent='';
+  if(b.calendar.status!=='ready')cal.append(el('div','dim','Calendar overlay is waiting for the private iCal address (see Settings/README).'));
+  else if(!b.calendar.events.length)cal.append(el('div','dim','Nothing on the calendar today.'));
+  b.calendar.events.forEach(e=>{const r=el('div','li');r.append(el('span','t',e.all_day?'all day':`${hm(e.start)}–${hm(e.end)}`),el('span',null,e.title+(e.location?' · '+e.location:'')));cal.append(r)});
+  const hot=$('#hot');hot.textContent='';if(!b.hot_ideas.length)hot.append(el('div','dim','No open ideas.'));
+  b.hot_ideas.forEach(i=>{const r=el('a','li');r.href='/ideas';r.append(el('span','t',i.heat!=null?'heat '+i.heat:''),el('span',null,i.title));hot.append(r)});
+  const y=$('#yday');y.textContent='';if(!b.yesterday)y.append(el('div','dim','No recap for yesterday.'));else{y.append(el('div','hl',b.yesterday.headline||''));
+    if((b.yesterday.decisions||[]).length){const u=el('ul');b.yesterday.decisions.forEach(x=>u.append(el('li',null,x)));y.append(u)}}
+  const p=$('#prom');p.textContent='';if(!b.promises.length)p.append(el('div','dim','Nothing due today or late.'));
+  b.promises.forEach(x=>{const r=el('a','li');r.href='/promises';r.append(el('span','t'+(x.overdue?' late':''),x.overdue?'late '+x.due:'today'),el('span',null,x.task));p.append(r)});
+  const cs=$('#cards');cs.textContent='';if(!b.recent_cards.length)cs.append(el('div','dim','No conversation cards yet.'));
+  b.recent_cards.forEach(c=>{const r=el('div','li');r.append(el('span','t',hm(c.ts0)),el('span',null,(c.title||'')+' · '+(c.summary||'')));cs.append(r)});
+}
+load();setInterval(load,300000);
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

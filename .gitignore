@@ -1,0 +1,42 @@
+# operator files, never committed
+.larry/
+# python
+.venv/
+__pycache__/
+*.pyc
+# data never lives in git: transcripts, audio, embeddings, databases, models
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
+*.wav
+*.flac
+*.opus
+*.opus.part
+*.ogg
+*.m4a
+*.caf
+*.npz
+*.npy
+*.mp3
+*.onnx
+*.blob
+.env
+*.key
+*.pem
+# Ramblr private data: transcripts, voiceprints, embeddings, backups, secrets, local config with mic names
+transcripts/
+voiceprints/
+embeddings/
+backups/
+*.bak
+*.age
+*.gpg
+secrets.env
+config.env
+*.env
+webhook*
+BLOCKED.md
+
+# Claude Code project-local settings (hooks wiring, machine specific)
+.claude/settings.local.json

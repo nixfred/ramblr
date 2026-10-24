@@ -1,0 +1,17 @@
+[Unit]
+Description=Ramblr: mic -> Silero VAD -> Whisper on the Intel NPU -> SQLite
+After=pipewire.service pipewire-pulse.service
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.capture
+Environment=PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+Restart=always
+RestartSec=3
+Nice=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr quotes</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.qh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.qh .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff;margin-right:8px}
+.qh input{flex:1;min-width:220px}
+.pull{margin-top:12px}.q{border-left:3px solid var(--mag);padding:6px 12px;margin:10px 0;font:16px/1.5 var(--sans)}
+.q .by{color:var(--dim);font:12px var(--mono);margin-top:4px}.q .why{color:#9fb;font-size:13px;font-style:italic}
+</style>
+</head>
+<body data-page="quotes">
+<main class="page">
+  <div class="qh"><span class="title glitch">QUOTES</span><input id="topic" placeholder="Topic to pull quotes about (or select lines on Today and press ❝)"><button class="primary" id="go">Pull</button></div>
+  <div id="pulls"></div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,post,toast}=R;
+async function load(){const ps=await api('/api/quotes');const box=$('#pulls');box.textContent='';if(!ps.length)box.append(el('div','empty','No quote pulls yet.'));
+  ps.forEach(p=>{const c=el('section','card pull');const h=el('div','qh');h.append(el('h2',null,p.title||'Quote pull'));const md=el('a','btn','Markdown');md.href=`/api/quotes/${p.id}.md`;h.append(md);c.append(h);
+    if(!p.quotes.length)c.append(el('div','dim','No verbatim quotes found.'));
+    p.quotes.forEach(q=>{const d=el('div','q');if(q.playable)d.append(R.playButton(q.line_id));d.append(document.createTextNode('“'+q.quote+'”'));
+      const by=el('a','by',`— ${q.speaker}, ${q.day} ${new Date(q.ts*1000).toTimeString().slice(0,5)}`);by.href=`/?day=${q.day}#seg-${q.line_id}`;by.style.display='block';d.append(by);
+      if(q.why)d.append(el('div','why',q.why));c.append(d)});box.append(c)})}
+$('#go').onclick=async()=>{const t=$('#topic').value.trim();if(!t)return;$('#go').disabled=true;toast('Pulling quotes…');try{const r=await post('/api/quotes',{topic:t});toast(`${r.quotes.length} quotes${r.dropped?` (${r.dropped} not verbatim, dropped)`:''}`);load()}catch(e){toast('Failed: '+e.message)}$('#go').disabled=false};
+load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

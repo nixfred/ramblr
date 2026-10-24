@@ -1,0 +1,11 @@
+[Unit]
+Description=Ramblr: 24 h raw-audio retention (only *.opus chunks older than 24 h in audio-24h; dry run until verified)
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/ramblr/config.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.retention tick
+Environment=PYTHONUNBUFFERED=1
+Nice=19
+IOSchedulingClass=idle

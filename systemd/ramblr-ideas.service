@@ -1,0 +1,17 @@
+[Unit]
+Description=Ramblr: spoken-idea detection and storyboard builds (Sonnet CLI or local Ollama, niced)
+After=ramblr-web.service
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.ideas_worker
+Environment=PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=default.target

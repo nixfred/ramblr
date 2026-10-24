@@ -1,0 +1,17 @@
+[Unit]
+Description=Ramblr: tailnet-only site (binds 127.0.0.1:8798, exposed by tailscale serve)
+StartLimitIntervalSec=0
+
+[Service]
+EnvironmentFile=-%h/.config/ramblr/config.env
+EnvironmentFile=-%h/.config/ramblr/secrets.env
+WorkingDirectory=%h/Projects/ramblr
+ExecStart=%h/Projects/ramblr/.venv/bin/python -m ramblr.web
+Environment=PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1
+TimeoutStopSec=10
+Restart=always
+RestartSec=3
+Nice=10
+
+[Install]
+WantedBy=default.target

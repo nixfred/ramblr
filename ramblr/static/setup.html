@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr setup</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.sh .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:12px}
+.step .n{font:800 12px var(--mono);color:var(--mag);letter-spacing:.16em}.step.done{box-shadow:inset 3px 0 0 var(--mint)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.mic{display:block;width:100%;text-align:left;margin:4px 0}
+.mic.on{border-color:var(--mint);box-shadow:var(--glow)}
+.check{font:13px var(--mono);margin:3px 0}.check.ok{color:var(--mint)}.check.no{color:var(--amber)}
+</style>
+</head>
+<body data-page="setup">
+<main class="page">
+  <div class="sh"><span class="title glitch">FIRST-RUN SETUP</span> <span class="dim" style="font-size:12px">five short steps; everything can be changed later</span></div>
+  <div class="steps">
+    <section class="card step" id="s1"><div class="n">1 · CHECKS</div><h2>Is everything running?</h2><div id="checks"></div></section>
+    <section class="card step" id="s2"><div class="n">2 · MIC</div><h2>Which microphone?</h2><div id="mics"></div><p class="dim">Ramblr records it with its own stream; your system default mic is never changed.</p></section>
+    <section class="card step" id="s3"><div class="n">3 · YOUR VOICE</div><h2>Name your voice</h2><p class="dim">Say a sentence or two, wait a few seconds, then name the voice Ramblr just heard and confirm it is you. Only your voice can then say "Larry, ...".</p>
+      <div id="voice"></div></section>
+    <section class="card step" id="s4"><div class="n">4 · QUIET HOURS</div><h2>When to flag talk as late-night</h2>
+      <div class="row"><input type="time" id="qs"> to <input type="time" id="qe"><button id="qsave">Save</button></div><p class="dim">A flag only; recording never changes.</p></section>
+    <section class="card step" id="s5"><div class="n">5 · OPTIONAL</div><h2>Extras you can add later</h2>
+      <div class="check">• iPhone capture: <a href="/iphone">/iphone</a></div><div class="check">• Encrypted nightly backup: RAMBLR_BACKUP_HOST (default whi)</div>
+      <div class="check">• Calendar overlay, AcoustID, voice router, webhooks: secrets in ~/.config/ramblr/secrets.env (see README)</div>
+      <div class="row"><button class="primary" id="finish">Finish setup</button></div></section>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,post,toast}=R;
+async function checks(){const s=await api('/api/status');const h=await api('/api/health');const box=$('#checks');box.textContent='';
+  const c=(ok,t)=>box.append(el('div','check '+(ok?'ok':'no'),(ok?'✓ ':'• ')+t));
+  c(s.capture_state==='listening','capture '+s.capture_state+(s.capture_source?' on '+s.capture_source.replace('alsa_input.','').slice(0,40):''));
+  c(!!s.device,'Whisper on '+(s.device||'?'));c(h.npu.present,'NPU '+(h.npu.present?'present':'not found (CPU fallback)'));
+  h.services.forEach(x=>c(x.active==='active',x.unit+' '+x.sub));if(s.capture_state==='listening')$('#s1').classList.add('done')}
+async function mics(){const m=await api('/api/mics');const box=$('#mics');box.textContent='';
+  m.mics.forEach(x=>{const b=el('button','mic'+(x.recording?' on':''),(x.recording?'● ':'○ ')+x.description+(x.available?'':' (unplugged)'));
+    b.onclick=async()=>{await post('/api/mics',{source:x.home?null:x.name});toast('Recording '+x.description);$('#s2').classList.add('done');mics()};box.append(b)});
+  if(m.mics.some(x=>x.recording))$('#s2').classList.add('done')}
+async function voice(){const sp=await api('/api/speakers');const box=$('#voice');box.textContent='';
+  const me=sp.find(x=>x.confirmed);if(me){box.append(el('div','check ok','✓ '+me.name+' is confirmed as you'));$('#s3').classList.add('done');return}
+  const cand=sp.filter(x=>x.count>0).sort((a,b)=>b.count-a.count);if(!cand.length){box.append(el('div','dim','No voice heard yet: talk for a few seconds, then reload.'));return}
+  cand.slice(0,3).forEach(x=>{const r=el('div','row');const inp=el('input');inp.value=x.named?x.name:'';inp.placeholder='Your name';const b=el('button','primary','This is me');
+    b.onclick=async()=>{try{if(inp.value.trim()&&inp.value.trim()!==x.name)await post(`/api/speakers/${x.id}/rename`,{name:inp.value.trim()});await post(`/api/speakers/${x.id}/confirm`,{});toast('Confirmed');voice()}catch(e){toast('Failed: '+e.message)}};
+    r.append(el('span','dim',`${x.name} · ${x.count} lines`),inp,b);box.append(r)})}
+async function quiet(){const q=await api('/api/quiet');$('#qs').value=q.start;$('#qe').value=q.end}
+$('#qsave').onclick=async()=>{await post('/api/quiet',{enabled:true,start:$('#qs').value,end:$('#qe').value});toast('Saved');$('#s4').classList.add('done')};
+$('#finish').onclick=async()=>{await post('/api/setup/done',{});toast('Setup done');setTimeout(()=>location.href='/',700)};
+checks();mics();voice();quiet();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ramblr insights</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.ih{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.ih .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#eaffff;margin-right:6px}
+.grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px}
+.sec{margin-top:12px}
+.subj{margin:10px 0 4px;font:12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--teal)}
+.fact{display:grid;grid-template-columns:1fr auto;gap:8px;padding:6px 4px;border-bottom:1px solid #111b2c;font-family:var(--sans);font-size:14px;align-items:center}
+.fact small{color:var(--dim);font-family:var(--mono)}.fact.off{opacity:.45;text-decoration:line-through}
+.fact button{min-height:30px;font-size:11px;padding:2px 8px}
+.ins li{margin:6px 0;font-family:var(--sans)}
+.trk{display:grid;grid-template-columns:140px 1fr 80px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #111b2c;font-size:13px}
+.spark{display:flex;align-items:flex-end;gap:1px;height:30px}.spark i{flex:1;background:var(--mag);opacity:.8;border-radius:1px 1px 0 0;min-height:1px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px;border-bottom:1px solid #111b2c}th{color:var(--dim);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.hours{display:flex;align-items:flex-end;gap:2px;height:60px;margin-top:6px}.hours i{flex:1;background:var(--teal);opacity:.75;border-radius:2px 2px 0 0;min-height:1px}
+.hl{display:flex;justify-content:space-between;color:var(--dim);font-size:10px}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.em{display:grid;grid-template-columns:34px repeat(24,minmax(0,1fr));gap:2px;font:10px var(--mono);color:var(--dim)}
+.em i{aspect-ratio:1;border-radius:3px;background:#0a101b}.em span{text-align:center}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.ih .title{font-size:19px;width:100%}.trk{grid-template-columns:100px 1fr 40px}}
+</style>
+</head>
+<body data-page="insights">
+<main class="page">
+  <div class="ih"><span class="title glitch">INSIGHTS</span>
+    <select id="days" aria-label="Range"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select>
+    <span class="dim" style="font-size:12px">facts and goals come from the nightly pass; numbers are computed from the transcript, TV excluded</span></div>
+  <div class="grid">
+    <div>
+      <section class="card"><h2>Patterns (weekly)</h2><div id="pat"></div></section>
+      <section class="card sec"><h2>Topic trackers</h2><div id="trk"></div>
+        <div class="row"><input id="tn" placeholder="Name" aria-label="tracker name" style="width:120px"><input id="tq" placeholder="Words or phrase to track" aria-label="tracker words" style="flex:1;min-width:160px">
+          <label class="dim" style="font-size:12px"><input type="checkbox" id="tp"> exact phrase</label><button id="tadd">Track</button></div></section>
+      <section class="card sec"><h2>Talk stats</h2><div id="talk"></div></section>
+      <section class="card sec"><h2>Energy map: when ideas happen</h2><div id="energy"></div></section>
+    </div>
+    <div>
+      <section class="card"><h2>Goals</h2><div id="goals"></div></section>
+      <section class="card sec"><h2>Things worth remembering</h2><div id="facts"></div></section>
+    </div>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,post,toast}=R;
+async function load(){
+  const r=await api('/api/insights?days='+$('#days').value);
+  const pat=$('#pat');pat.textContent='';
+  if(!r.patterns.length)pat.append(el('div','dim','No weekly patterns yet. The nightly pass writes them once a week.'));
+  r.patterns.slice(0,2).forEach((p,i)=>{pat.append(el('div','subj',p.week+(i===0?' (latest)':'')));const u=el('ul','ins');p.insights.forEach(x=>u.append(el('li',null,x)));pat.append(u)});
+  const tk=$('#trk');tk.textContent='';if(!r.trackers.length)tk.append(el('div','dim','Track a topic (a word, a project, a person) and see how often it comes up.'));
+  r.trackers.forEach(t=>{const row=el('div','trk');const n=el('div');n.append(el('b',null,t.name),el('div','dim',t.query+(t.phrase?' (phrase)':'')));
+    const sp=el('div','spark');const mx=Math.max(1,...t.series.map(x=>x.n));t.series.forEach(x=>{const i=el('i');i.style.height=(100*x.n/mx)+'%';i.title=`${x.day}: ${x.n}`;sp.append(i)});
+    const off=el('button',null,'×');off.title='Stop tracking (kept, switched off)';off.onclick=async()=>{await post('/api/trackers',{id:t.id,active:false});load()};
+    const tot=el('div');tot.append(el('b',null,String(t.total)),off);row.append(n,sp,tot);tk.append(row)});
+  const ta=$('#talk');ta.textContent='';const tb=el('table');tb.innerHTML='<thead><tr><th>Who</th><th>Talk</th><th>Lines</th><th>Words/min</th><th>Longest run</th><th>Busiest hour</th></tr></thead>';
+  const body=el('tbody');r.talk.people.forEach(p=>{const tr=el('tr');[p.name,p.talk_min+' min',p.lines,p.wpm??'–',p.longest_min+' min',p.busiest_hour!=null?p.busiest_hour+':00':'–'].forEach(v=>tr.append(el('td',null,String(v))));body.append(tr)});
+  tb.append(body);ta.append(tb);
+  const hs=el('div','hours');const hm=Math.max(1,...r.talk.hours);r.talk.hours.forEach((v,h)=>{const i=el('i');i.style.height=(100*v/hm)+'%';i.title=`${h}:00 ${v} min`;hs.append(i)});
+  ta.append(el('div','subj','talk by hour of day'),hs,(()=>{const l=el('div','hl');['0','6','12','18','23'].forEach(x=>l.append(el('span',null,x)));return l})());
+  const en=$('#energy');en.textContent='';const e=r.energy;
+  if(!e.total)en.append(el('div','dim','No ideas yet in this range.'));else{const g=el('div','em');g.append(el('span'));for(let h=0;h<24;h++)g.append(el('span',null,h%6?'':String(h)));
+    const mx=Math.max(1,...e.grid.flat());['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((dname,di)=>{g.append(el('span',null,dname));
+      e.grid[di].forEach((v,h)=>{const c=el('i');if(v){c.style.background=`rgba(255,62,165,${0.25+0.75*v/mx})`;c.style.boxShadow='0 0 6px #ff3ea566'}c.title=`${dname} ${h}:00 · ${v} idea${v===1?'':'s'}`;g.append(c)})});
+    en.append(g,el('div','dim',`${e.total} ideas · peak ${e.peak.weekday} ${e.peak.hour}:00`))}
+  const go=$('#goals');go.textContent='';if(!r.goals.length)go.append(el('div','dim','Goals people state ("I want to ship X by Friday") show up here.'));
+  r.goals.forEach(g=>{const f=el('div','fact'+(g.status!=='open'?' off':''));const t=el('div');t.append(document.createTextNode(`${g.goal}`),el('small',null,` ${g.owner||''}${g.by_phrase?' · by '+g.by_phrase:''} · ${g.mentions}× · since ${g.first_seen}`));
+    const b=el('div');if(g.status==='open'){const d=el('button',null,'Done');d.onclick=async()=>{await post(`/api/goals/${g.id}/status`,{status:'done'});load()};const x=el('button',null,'Drop');x.onclick=async()=>{await post(`/api/goals/${g.id}/status`,{status:'dropped'});load()};b.append(d,x)}
+    else{const o=el('button',null,'Reopen');o.onclick=async()=>{await post(`/api/goals/${g.id}/status`,{status:'open'});load()};b.append(el('small',null,g.status+' '),o)}
+    f.append(t,b);go.append(f)});
+  const fa=$('#facts');fa.textContent='';if(!r.facts.length)fa.append(el('div','dim','Durable facts (people, preferences, plans) are pulled out by the nightly pass.'));
+  const by={};r.facts.forEach(x=>{(by[x.subject]=by[x.subject]||[]).push(x)});
+  Object.entries(by).forEach(([s,fs])=>{fa.append(el('div','subj',s));fs.forEach(x=>{const f=el('div','fact'+(x.status!=='active'?' off':''));const t=el('div');
+    const a=el('a');a.href=`/search?q=${encodeURIComponent(x.fact.split(' ').slice(0,4).join(' '))}`;a.style.color='inherit';a.style.textDecoration='none';a.textContent=x.fact;
+    t.append(a,el('small',null,` ${x.kind||''} · ${x.mentions}× · ${x.first_seen}${x.last_seen!==x.first_seen?' to '+x.last_seen:''}${x.status==='superseded'?' · superseded':''}`));
+    const b=el('button',null,x.status==='rejected'?'Restore':'Wrong');b.title=x.status==='rejected'?'Bring it back':'Mark as wrong (kept, hidden from use)';
+    b.onclick=async()=>{await post(`/api/facts/${x.id}/status`,{status:x.status==='rejected'?'active':'rejected'});load()};f.append(t,b);fa.append(f)})});
+}
+$('#tadd').onclick=async()=>{try{await post('/api/trackers',{name:$('#tn').value,query:$('#tq').value,phrase:$('#tp').checked});$('#tn').value='';$('#tq').value='';toast('Tracking');load()}catch(e){toast('Failed: '+e.message)}};
+$('#days').onchange=load;load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>

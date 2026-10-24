@@ -1,0 +1,88 @@
+#!/usr/bin/env bun
+// larry-notify: Claude Code hook helper (Notification + PreToolUse AskUserQuestion).
+// Reads the hook JSON on stdin, adds host/cwd/herdr agent, POSTs it to $LARRY_NOTIFY_URL with
+// "Authorization: Bearer $LARRY_NOTIFY_KEY" (both from ~/.config/larry-notify/env). If that env file is
+// missing or incomplete, appends the event to ~/.local/state/larry-notify/pending.log instead.
+// Contract: ALWAYS exit 0, print NOTHING to stdout (no hook decision), never block: the parent hands the
+// work to a detached child and returns at once. Key values are never logged.
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
+import { hostname } from "os";
+import { dirname } from "path";
+
+const HOME = process.env.HOME ?? "";
+const ENV_FILE = process.env.LARRY_NOTIFY_ENV_FILE ?? `${HOME}/.config/larry-notify/env`;
+const PENDING = process.env.LARRY_NOTIFY_PENDING ?? `${HOME}/.local/state/larry-notify/pending.log`;
+
+function loadEnv(path: string): Record<string, string> | null {
+  if (!existsSync(path)) return null;
+  const out: Record<string, string> = {};
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m) out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return out;
+}
+
+async function herdrAgent(): Promise<{ name?: string; pane_id?: string } | null> {
+  const pane = process.env.HERDR_PANE_ID;
+  if (!pane) return null;
+  try {
+    const p = Bun.spawn(["herdr", "agent", "list"], { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
+    const t = setTimeout(() => p.kill(), 2000);
+    const txt = await new Response(p.stdout).text();
+    clearTimeout(t);
+    const a = JSON.parse(txt)?.result?.agents?.find((x: any) => x.pane_id === pane);
+    return a ? { name: a.name ?? a.terminal_title_stripped, pane_id: a.pane_id } : { pane_id: pane };
+  } catch {
+    return { pane_id: pane };
+  }
+}
+
+async function child(raw: string) {
+  let hook: any = {};
+  try { hook = JSON.parse(raw); } catch { hook = { raw: raw.slice(0, 2000) }; }
+  const agent = await herdrAgent();
+  const event = {
+    host: process.env.LARRY_HOST ?? hostname(),
+    cwd: hook.cwd ?? process.cwd(),
+    herdr_agent: agent?.name ?? null,
+    herdr_pane: agent?.pane_id ?? process.env.HERDR_PANE_ID ?? null,
+    received_at: new Date().toISOString(),
+    hook,
+  };
+  const env = loadEnv(ENV_FILE);
+  const url = env?.LARRY_NOTIFY_URL ?? process.env.LARRY_NOTIFY_URL;
+  const key = env?.LARRY_NOTIFY_KEY ?? process.env.LARRY_NOTIFY_KEY;
+  if (env && url && key) {
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify(event),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (r.ok) return;
+    } catch {}
+  }
+  // env missing, incomplete, or the POST failed: keep the event (no key, no url in the log)
+  try {
+    mkdirSync(dirname(PENDING), { recursive: true });
+    appendFileSync(PENDING, JSON.stringify(event) + "\n");
+  } catch {}
+}
+
+if (process.argv[2] === "--child") {
+  await child(await Bun.stdin.text());
+  process.exit(0);
+}
+
+// Hook entry: slurp stdin, hand off to a detached child, return immediately with exit 0 and no output.
+try {
+  const raw = await Bun.stdin.text();
+  const p = Bun.spawn([process.execPath, import.meta.path, "--child"], {
+    stdin: new Blob([raw]), stdout: "ignore", stderr: "ignore",
+    env: process.env, detached: true,
+  } as any);
+  p.unref();
+} catch {}
+process.exit(0);

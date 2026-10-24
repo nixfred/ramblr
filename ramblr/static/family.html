@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Family archive</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/brand/nixfred-icon.svg">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.fh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.fh .title{font-size:24px;font-weight:800;letter-spacing:.08em;color:#ffe6a8}
+.note{border:1px solid #6b5320;color:var(--amber);border-radius:10px;padding:8px 12px;margin:10px 0;font-size:13px}
+.l{display:grid;grid-template-columns:80px 1fr;gap:10px;padding:6px 4px;border-bottom:1px solid #111b2c;font-family:var(--sans)}.l .t{color:var(--dim);font:12px var(--mono)}
+</style>
+</head>
+<body data-page="family" data-nolive="1">
+<main class="page">
+  <div class="fh"><span class="title">FAMILY ARCHIVE</span><button id="tog">…</button><select id="day" aria-label="Day"></select><input id="q" type="search" placeholder="Search the archive"></div>
+  <div class="note">Kept separate: its own database file (family.db), backed up as its own encrypted file. No ideas, no summaries, no AI, no MCP or search access, no voice clips. While the switch is on, new room lines go only here.</div>
+  <section class="card"><div id="lines"></div></section>
+</main>
+<script src="/static/app.js"></script>
+<script>
+const {$,el,api,post,toast}=R;
+async function status(){const s=await api('/api/status');$('#tog').textContent=s.family?'Archive mode ON (turn off)':'Turn archive mode on';$('#tog').className=s.family?'hot':'';return s}
+async function load(day,q){const r=await api('/api/family/lines?'+new URLSearchParams({day:day||'',q:q||''}));const sel=$('#day');sel.textContent='';
+  r.days.forEach(d=>{const o=el('option',null,d);o.value=d;sel.append(o)});if(r.day)sel.value=r.day;
+  const box=$('#lines');box.textContent='';if(!r.lines.length)box.append(el('div','empty','Nothing in the family archive yet.'));
+  r.lines.forEach(l=>{const d=el('div','l');d.append(el('span','t',(q?l.day+' ':'')+l.t),el('span',null,l.text));box.append(d)})}
+$('#tog').onclick=async()=>{const s=await status();await post('/api/family',{on:!s.family});toast(!s.family?'Family archive ON':'Family archive off');status()};
+$('#day').onchange=()=>load($('#day').value);let qt;$('#q').oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>load('',$('#q').value),300)};
+status();load();
+</script>
+<script src="/static/palette.js"></script>
+</body>
+</html>
