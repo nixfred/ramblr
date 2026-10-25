@@ -602,7 +602,12 @@ thrown away.
   message offers **Undo** (media flags, labels and the classifier's weights go back exactly). A manual flag is
   never overridden, and every click is a training example: the weights are refit (MAP, pulled toward the
   hand-set prior with the weight of about 8 examples, so one stray click barely moves it and twenty consistent ones
-  steer it), then the rest of that day is re-decided. `GET /api/media/status` shows the device and the weights.
+  steer it). A click changes only the lines it was made on: nothing else is re-decided (a TV click still follows
+  its own stretch through the undoable spread, "marked N more"). One click counts as **one** training example however
+  many lines it covers, in the weights and in the per-voice "Fred marked this voice TV" ratio, so one range click over
+  a video cannot teach "plain speech is TV" (2026-10-25: a 169-line click flipped 52 room-talk lines and kept calling
+  the family's new lines TV). `python -m ramblr.media refit` recomputes the weights. `GET /api/media/status` shows
+  the device and the weights.
 
 ## TV detection on every mic, and Music vs TV (2026-10-24, Fred 8:03 / 8:06 / 8:08 AM)
 

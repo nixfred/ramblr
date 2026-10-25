@@ -131,9 +131,17 @@ def test_retag_honours_the_carry(env):
     ids = [line(env, T + i * 20, 18, w) for i in range(6)]
     m.tag_pending(d, until=T + 200)
     assert all(media_of(env, i) == 1 for i in ids)
-    out = m.correct(d, ids[:2], False)                                                       # one click re-decides the rest
-    assert set(ids[2:]) <= set(out["retagged"]) and all(media_of(env, i) == 0 for i in ids[2:])
+    out = m.correct(d, ids[:2], False)
     assert all(media_of(env, i) == -1 for i in ids[:2])                                     # Fred's own clicks
+    # retagscope (2026-10-25): a click changes only its own lines (the day-wide re-decide flipped 52 room-talk lines
+    # after one TV click). The caller's stretch is covered two other ways: NOT MEDIA on the 'Media skipped' row is the
+    # whole stretch, and the carried "not TV" keeps every new line of the stretch talk.
+    assert out["retagged"] == [] and all(media_of(env, i) == 1 for i in ids[2:])
+    nxt = line(env, T + 6 * 20, 18, w)
+    m.tag_pending(d, until=T + 200)
+    assert media_of(env, nxt) == 0                                                           # carried: talk
+    m.correct(d, ids[2:], False)                                                             # the row's NOT MEDIA
+    assert all(media_of(env, i) == -1 for i in ids)
 
 
 def test_call_mode_is_room_only(env):

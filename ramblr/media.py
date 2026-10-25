@@ -45,6 +45,9 @@ PRIOR = {"bias": -2.2, "music": 5.0, "tv": 6.0, "crowd": 3.0, "narration": 1.0, 
                         # do (family talk max 0.59, Fred's vic lines 0.01-0.06). Fred 8:06 AM: detect TV on its own.
 OCC_WINDOW = 120.0     # seconds of the same source looked back over for occupancy
 L2 = 8.0            # pull toward the prior, worth about 8 examples: one click nudges, many consistent clicks steer
+# One click is one example, however many lines it covers (retagscope, 2026-10-25): Fred's 169-line range click
+# outweighed the prior 21:1 and taught "plain speech = TV" (52 room-talk lines flipped). 0 = count every line.
+CLICK_CAP = float(os.environ.get("RAMBLR_MEDIA_CLICK_CAP", 1))
 
 
 # ---- classifier (capture process) ----
@@ -240,13 +243,24 @@ def features(db, seg):
         f["unknown"] = 1.0
         c = cl_id or sp_id
         # Fred's own labels only (2 = TV, -1 = talk), same mic only: counting auto tags let a room-average cluster
-        # feed on its own mistakes (2026-10-24: 27 of 40 family-talk lines hidden by this feature alone)
-        r = db.execute("""SELECT COUNT(*) n, SUM(CASE WHEN media=2 THEN 1 ELSE 0 END) m FROM segments
-                          WHERE (cluster_id=? OR speaker_id=? OR id IN (SELECT segment_id FROM media_skips WHERE ended IS NULL AND cluster_id=?)) AND source IS ? AND media IN (2,-1) AND id<>?
-                          AND id IN (SELECT segment_id FROM media_corrections WHERE undone_at IS NULL)""", (c, c, c, src, seg["id"])).fetchone()   # clicks, not spreads
-        if r["n"] >= 5:
+        # feed on its own mistakes (2026-10-24: 27 of 40 family-talk lines hidden by this feature alone). Weighted per
+        # click like fit(): one range click over TV that fell into family clusters must not brand those voices TV.
+        r = db.execute(f"""SELECT SUM(k.w) n, SUM(CASE WHEN s.media=2 THEN k.w ELSE 0 END) m FROM segments s
+                           JOIN media_corrections c ON c.id=(SELECT MAX(id) FROM media_corrections WHERE segment_id=s.id AND undone_at IS NULL)
+                           JOIN ({CLICKS_SQL}) k ON k.created=c.created
+                           WHERE (s.cluster_id=? OR s.speaker_id=? OR s.id IN (SELECT segment_id FROM media_skips WHERE ended IS NULL AND cluster_id=?))
+                           AND s.source IS ? AND s.media IN (2,-1) AND s.id<>?""", (*click_args(), c, c, c, src, seg["id"])).fetchone()   # clicks, not spreads
+        if (r["n"] or 0) >= 5:
             f["unknown_media_ratio"] = (r["m"] or 0) / r["n"]   # a voice Fred has mostly marked as TV
     return f
+
+
+# one click = one row per line, all with the same `created`; each line weighs min(1, CLICK_CAP / lines in its click)
+CLICKS_SQL = "SELECT created, MIN(1.0, ? * 1.0 / COUNT(*)) w FROM media_corrections WHERE undone_at IS NULL GROUP BY created"
+
+
+def click_args():
+    return (CLICK_CAP if CLICK_CAP > 0 else 1e9,)
 
 
 def prob(model, f):
@@ -353,7 +367,8 @@ def retag(db, ids):
 
 
 def correct(db, ids, is_media, who="site"):
-    """Fred's one-click correction for lines. Records each as a training example and refits the weights."""
+    """Fred's one-click correction for lines: a manual flag on exactly these lines, one training example (the click),
+    a refit. TV clicks also spread over their stretch as an undoable batch. Nothing else changes."""
     ids = sorted({int(i) for i in ids})
     if not ids:
         raise ValueError("no lines")
@@ -368,11 +383,11 @@ def correct(db, ids, is_media, who="site"):
                    (s["id"], 1 if is_media else 0, json.dumps(f), who, now))
         db.execute("UPDATE segments SET media=? WHERE id=?", (2 if is_media else -1, s["id"]))
     model = fit(db)
-    # the new weights re-decide that day's other auto lines, so one correction teaches the rest of the day
-    days = sorted({r["day"] for r in db.execute(f"SELECT DISTINCT day FROM segments WHERE id IN ({ph})", ids)})
-    others = [r[0] for r in db.execute(f"SELECT id FROM segments WHERE day IN ({','.join('?' * len(days))}) AND media IN (0,1)", days)]
-    changed = retag(db, others)
-    out = {"lines": len(ids), "media": bool(is_media), "retagged": changed, "corrections": model["n"], "spread": [], "batch": None}
+    # No other line is re-decided (retagscope, 2026-10-25). The day-wide re-decide flipped 52 room-talk lines silently
+    # after one TV click and 33 TV lines after a 7-line "not media"; replayed over every click Fred made, its flips were
+    # 42 right, 68 wrong, 376 never checked. New lines use the new weights; a TV click follows its own stretch only
+    # through spread (shown as "marked N more", one undo).
+    out = {"lines": len(ids), "media": bool(is_media), "retagged": [], "corrections": model["n"], "spread": [], "batch": None}
     if is_media:                 # E2b (Fred 8:00 AM): "once I label TV can it follow the rest of that to mark it tv?"
         out["batch"] = uuid.uuid4().hex[:12]
         out["spread"] = spread(db, ids, out["batch"], who)
@@ -456,8 +471,10 @@ def fit(db):
     """Logistic regression on all corrections, L2-regularised toward the hand-set prior (few examples cannot
     swing it wildly). Plain numpy gradient descent: a few hundred examples at most."""
     # the latest correction per line wins (Fred flipping a line back must not leave both labels fighting)
-    rows = db.execute("""SELECT c.segment_id, c.label, c.features FROM media_corrections c   -- an undone click teaches nothing
-                         WHERE c.id = (SELECT MAX(id) FROM media_corrections WHERE segment_id=c.segment_id AND undone_at IS NULL)""").fetchall()
+    rows = db.execute(f"""SELECT c.segment_id, c.label, c.features, k.w FROM media_corrections c   -- an undone click teaches nothing
+                          JOIN ({CLICKS_SQL}) k ON k.created=c.created
+                          WHERE c.id = (SELECT MAX(id) FROM media_corrections WHERE segment_id=c.segment_id AND undone_at IS NULL)""",
+                      click_args()).fetchall()
     keys = ["bias"] + FEATURES
     prior = np.array([PRIOR[k] for k in keys])
     w = prior.copy()
@@ -469,10 +486,11 @@ def fit(db):
             return features(db, seg) if seg else json.loads(r["features"])
         X = np.array([[1.0] + [fx(r).get(k, 0.0) for k in FEATURES] for r in rows])
         y = np.array([r["label"] for r in rows], dtype=float)
-        lr = 1.0 / (len(y) + L2)
+        sw = np.array([r["w"] for r in rows], dtype=float)
+        lr = 1.0 / (sw.sum() + L2)
         for _ in range(600):      # MAP: sum of log-losses + L2/2 * |w - prior|^2, so one click nudges, twenty steer
             p = 1 / (1 + np.exp(-(X @ w)))
-            w -= lr * (X.T @ (p - y) + L2 * (w - prior))
+            w -= lr * (X.T @ (sw * (p - y)) + L2 * (w - prior))
     model = {"w": {k: round(float(v), 4) for k, v in zip(keys, w)}, "n": len(rows), "fitted": time.time()}
     dbm.set_meta(db, "media_model", json.dumps(model))
     return model
@@ -518,3 +536,12 @@ def label_for(db, t0, t1, source=None):
                                                           (source, t1, t0)).fetchone():
         return "TV", title          # transcribed speech that is media = spoken media
     return "Media", None
+
+
+if __name__ == "__main__":     # python -m ramblr.media refit: recompute the weights from Fred's clicks (writes meta only)
+    import sys
+    if sys.argv[1:] == ["refit"]:
+        d = dbm.connect(config.DB_PATH)
+        old = load_model(d)
+        new = fit(d)
+        print(json.dumps({"clicks_cap": CLICK_CAP, "corrections": new["n"], "old": old["w"], "new": new["w"]}, indent=1))
