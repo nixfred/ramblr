@@ -7,7 +7,7 @@ import time
 import numpy as np
 import soundfile as sf
 
-from . import config, db as dbm, media, notify, speakers
+from . import config, db as dbm, media, mediaskip, notify, speakers
 
 log = logging.getLogger("ramblr.diarize")
 
@@ -28,9 +28,40 @@ class Embedder:
         return v / n if n > 0 else v
 
 
+NEW = -1      # decide(create=False): "this voice would found a new cluster" (no speaker row is made)
+
+
+def would(db, seg_id, dur, emb, vec_emb_id):
+    """(speaker, cluster, sim, voice) the diarizer would pick, without learning or founding a cluster."""
+    cl, sim = decide(db, seg_id, dur, emb, vec_emb_id, learn=False, create=False)
+    real = cl if cl not in (None, NEW) else None
+    return (speakers.resolve(db, real) if real is not None else None), real, sim, cl is not None
+
+
+def skip(db, seg_id, dur, emb, vec_emb_id, w=None):
+    """A media line (TV / music, auto or marked by hand): no speaker, nothing learned, no new cluster (Fred 2026-10-25).
+    The embedding is kept and the voice it would have had is noted, so the media decision stays the same."""
+    cur = db.execute("SELECT speaker_id, cluster_id FROM segments WHERE id=?", (seg_id,)).fetchone()
+    db.execute("UPDATE segments SET emb_id=?, diar=1, audio=NULL WHERE id=?", (vec_emb_id, seg_id))
+    if cur["speaker_id"] is not None or cur["cluster_id"] is not None:
+        mediaskip.unlabel(db, seg_id, "diarize")            # set by hand before its voice was read: kept, restorable
+    else:
+        mediaskip.skip_new(db, seg_id, *(w or would(db, seg_id, dur, emb, vec_emb_id)))
+    return None
+
+
 def assign(db, seg_id, dur, emb, vec_emb_id):
-    """Pick a speaker for one segment from the saved voiceprints (named ones included)."""
-    cur = db.execute("SELECT manual, speaker_id FROM segments WHERE id=?", (seg_id,)).fetchone()
+    """Pick a speaker for one segment from the saved voiceprints (named ones included). Media lines get none."""
+    cur = db.execute(f"SELECT {media.SEG_COLS}, manual FROM segments WHERE id=?", (seg_id,)).fetchone()
+    if cur["media"] in mediaskip.MEDIA:
+        return skip(db, seg_id, dur, emb, vec_emb_id)
+    if cur["media"] == 0 and not cur["manual"] and (cur["source"] is None or cur["source"].startswith("mic:")):
+        # the classifier called it talk before the voice was known; a voice matching no named person can tip it to TV
+        # (talk-over vs media). Decide that first, so a TV line never founds a cluster or teaches a voiceprint.
+        w = would(db, seg_id, dur, emb, vec_emb_id)
+        m, p, _ = media.decide(db, {**dict(cur), "speaker_id": w[0], "cluster_id": w[1], "voice": w[3]})
+        if m and db.execute("UPDATE segments SET media=1, media_p=? WHERE id=? AND media=0", (round(p, 3), seg_id)).rowcount:
+            return skip(db, seg_id, dur, emb, vec_emb_id, w)
     if cur["manual"]:
         # Fred already set this line by hand: keep his speaker, let the voice teach that voiceprint (manual weight,
         # or AMBIGUOUS_WEIGHT if the sample sounds as much like another named person)
@@ -65,8 +96,8 @@ def media_context(db, seg_id):
     return bool((m or 0) > 0.3 or (r["source"] is None and players.cast_playing(db, a, b)))
 
 
-def decide(db, seg_id, dur, emb, vec_emb_id, learn=True):
-    """(cluster speaker id or None, best similarity). Named people are gated: a line goes to a named voiceprint only
+def decide(db, seg_id, dur, emb, vec_emb_id, learn=True, create=True):
+    """(cluster speaker id or None, best similarity); with create=False a would-be new cluster comes back as NEW. Named people are gated: a line goes to a named voiceprint only
     with SPK_NAMED_MATCH and a SPK_MARGIN lead over every other named person; otherwise it joins (or founds) an unnamed
     cluster. Named voiceprints learn only from very sure, long, media-free lines, so one person's print cannot
     swallow the whole room (2026-10-24: Fred's print had absorbed 130 lines incl. Jordan, kids and TV)."""
@@ -77,6 +108,8 @@ def decide(db, seg_id, dur, emb, vec_emb_id, learn=True):
         scored.append((float(np.dot(c, emb)), sid, speakers.resolve(db, sid)))
     if not scored:
         if dur >= config.SPK_MIN_SECONDS:
+            if not create:
+                return NEW, None
             sp = dbm.new_speaker(db)
             dbm.add_to_voiceprint(db, sp, vec_emb_id, emb)
             return sp, None
@@ -101,6 +134,8 @@ def decide(db, seg_id, dur, emb, vec_emb_id, learn=True):
             dbm.add_to_voiceprint(db, unnamed[0][1], vec_emb_id, emb)      # anonymous clusters keep learning
         return unnamed[0][1], unnamed[0][0]
     if long_enough:
+        if not create:
+            return NEW, best_sim
         sp = dbm.new_speaker(db)
         if learn:
             dbm.add_to_voiceprint(db, sp, vec_emb_id, emb)
@@ -133,7 +168,7 @@ def redo(db, since, apply=False):
     try:
         purged = purge_auto_from_named(db)
         rows = db.execute("""SELECT s.id, s.dur, s.speaker_id, s.cluster_id, e.id AS eid, e.vec FROM segments s JOIN embeddings e ON e.id=s.emb_id
-                             WHERE s.ts>=? AND s.manual=0 ORDER BY s.id""", (since,)).fetchall()
+                             WHERE s.ts>=? AND s.manual=0 AND COALESCE(s.media,0) NOT IN (1,2) ORDER BY s.id""", (since,)).fetchall()
         batch, changed = uuid.uuid4().hex[:12], []
         for r in rows:
             v = dbm.blob_to_vec(r["vec"])
@@ -159,7 +194,9 @@ def redo(db, since, apply=False):
 
 
 def run_batch(db, emb):
-    rows = db.execute("SELECT id, dur, audio FROM segments WHERE diar=0 ORDER BY id LIMIT ?", (config.DIAR_BATCH,)).fetchall()
+    # wait for the media tag (a TV line must never be labelled or learned from first), at most DIAR_MEDIA_WAIT
+    rows = db.execute("SELECT id, dur, audio FROM segments WHERE diar=0 AND (media IS NOT NULL OR ts+dur<?) ORDER BY id LIMIT ?",
+                      (time.time() - config.DIAR_MEDIA_WAIT, config.DIAR_BATCH)).fetchall()
     done = 0
     for r in rows:
         path = config.SPOOL / (r["audio"] or "")
@@ -211,9 +248,18 @@ def main():
     emb = Embedder()
     log.warning("diarizer ready: %s dim=%d match>=%.2f", config.SPK_MODEL_NAME, emb.dim, config.SPK_MATCH)
     config.SPOOL.mkdir(parents=True, exist_ok=True)
-    last_sweep = 0.0
+    last_sweep = last_heal = 0.0
     while True:
         n = run_batch(db, emb)
+        if time.time() - last_heal > 60:
+            last_heal = time.time()
+            try:
+                h = mediaskip.heal(db)          # any media line still carrying a speaker (an undo, a manual pick): off
+                if h["unlabelled"] or h["relabelled"]:
+                    dbm.bump_rev(db)
+                    log.info("mediaskip heal: %d unlabelled, %d relabelled", len(h["unlabelled"]), len(h["relabelled"]))
+            except Exception:
+                log.exception("mediaskip heal failed")
         if time.time() - last_sweep > 600:
             last_sweep = time.time()
             sweep_orphans(db)

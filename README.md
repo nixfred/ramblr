@@ -92,7 +92,7 @@ Unit files live in [`systemd/`](systemd/); `./install.sh --enable` copies them t
 |---|---|
 | **Live transcript** | Each line on the page about 0.9 s after you stop talking. Copy any range as clean `[14:03:12] Name: text`. |
 | **Speakers** | Voiceprints (wespeaker ResNet34 on the CPU). Name a voice once and it is labelled from then on. A named person needs a 0.90 match and a 0.10 lead over every other named person; nobody is named while the TV is on, so one voiceprint cannot swallow the room. Reassign, propagate, undo. |
-| **TV, music and the room** | YAMNet on the NPU per mic, a speech-occupancy feature (broadcasts never pause), sticky media stretches, and the Chromecast now-playing title. "Music" only for a named song or strong music with little speech, otherwise "TV". Mark one line TV and the whole stretch follows (one undoable batch). Media lines are hidden, never deleted. |
+| **TV, music and the room** | YAMNet on the NPU per mic, a speech-occupancy feature (broadcasts never pause), sticky media stretches, and the Chromecast now-playing title. "Music" only for a named song or strong music with little speech, otherwise "TV". Mark one line TV and the whole stretch follows (one undoable batch). Media lines are hidden as one "Media skipped" row, carry no speaker, never teach a voiceprint, and are never deleted; NOT MEDIA brings them back with real labels (undoable). |
 | **Song names** | Chromaprint plus AcoustID (optional key). |
 | **Extra mics** | `clients/ramblr-mic` streams another machine's mic (curl plus parec or arecord, no Python) over the tailnet. `startmic` / `stopmic` turn it on and off on that machine (`clients/startmic`, `clients/stopmic`). |
 | **Voice commands** | "Larry, tell/ask/have/get <bot> (to) <task>", also split over several lines, with a clipped wake word if a bot is named, and host names by sound ("on gas" means gus). Only your voice counts; an unknown voice is held. The router holds anything that could send, spend, delete, install or change something until you Approve it. |
@@ -586,10 +586,20 @@ thrown away.
 - **Line decision:** a small logistic model over the overlap-weighted window scores plus who spoke. A known,
   named voice over the TV stays talk (talk-over); an unnamed voice that is mostly heard while media plays is a
   media hint. The decision is made again once the diarizer names the voice.
-- **Effect:** media lines keep their text but are folded into a gray block on Today ("TV playing 7:00 PM to 7:23 PM ·
-  8 lines", Show lines, Not media), drawn as gray bands on the timeline, and left out of idea detection, action
-  items, recaps, the Ask index and the live ticker.
-- **Corrections:** 📺 on any line, **Media** / **Talk** on a selection, or **Not media** on a block. A manual flag is
+- **Effect:** media lines keep their text but each stretch collapses to one row on Today ("Media skipped 7:00 PM to
+  7:23 PM · 8 lines", no text, no speaker; a small *show* peeks at the text), drawn as gray bands on the timeline,
+  and left out of search, exports, idea detection, voice commands, action items, recaps, the Ask index and the live
+  ticker.
+- **No speaker on media (2026-10-25):** a media line (auto or marked TV) gets no speaker label, never adds a sample
+  to a voiceprint and never founds a Speaker-N cluster. The diarizer waits for the media tag (up to 90 s) and, for a
+  line tagged talk, checks with the voice it would pick whether the line is really TV before it labels or learns
+  anything. The voice a media line had (or would have had) is kept in `media_skips`, so the media decision does not
+  move when the label comes off. A line that turns into media later loses its label the same way, and a sweep in the
+  diarizer catches any that still carry one. `python -m ramblr.mediaskip migrate [--apply]` unlabels the media
+  lines that existed before this (one batch); `python -m ramblr.mediaskip restore <batch> --apply` puts it back.
+- **Corrections:** 📺 on any line, **Media** / **Talk** on a selection, or **NOT MEDIA** on a "Media skipped" row:
+  the lines become talk and are diarized afresh from their stored voice, so they get real speaker labels, and the
+  message offers **Undo** (media flags, labels and the classifier's weights go back exactly). A manual flag is
   never overridden, and every click is a training example: the weights are refit (MAP, pulled toward the
   hand-set prior with the weight of about 8 examples, so one stray click barely moves it and twenty consistent ones
   steer it), then the rest of that day is re-decided. `GET /api/media/status` shows the device and the weights.

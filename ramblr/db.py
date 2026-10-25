@@ -292,6 +292,21 @@ CREATE TRIGGER IF NOT EXISTS media_windows_never_delete BEFORE DELETE ON media_w
 BEGIN SELECT RAISE(ABORT, 'ramblr: media tags are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS media_corrections_never_delete BEFORE DELETE ON media_corrections
 BEGIN SELECT RAISE(ABORT, 'ramblr: media corrections are never deleted'); END;
+-- mediaskip (Fred 2026-10-25): a media line carries no speaker. When one is taken off (or a new media line is never
+-- given one) the voice it had, or would have had, is kept here so it can be put back exactly. Append-only: a row is
+-- closed (ended) when the line gets a speaker again, never deleted.
+CREATE TABLE IF NOT EXISTS media_skips(
+  id INTEGER PRIMARY KEY, segment_id INTEGER NOT NULL,
+  speaker_id INTEGER, cluster_id INTEGER, sim REAL, manual INTEGER NOT NULL DEFAULT 0,
+  counted_for INTEGER,                   -- voiceprint the line's embedding was counted in (taken out, put back on restore)
+  labeled INTEGER NOT NULL DEFAULT 1,    -- 1 = the line really showed this speaker; 0 = what the diarizer would have picked
+  voice INTEGER NOT NULL DEFAULT 1,      -- 1 = a voice that matched no named person was heard (media feature 'unknown')
+  why TEXT NOT NULL, batch_id TEXT, created REAL NOT NULL, ended REAL, ended_how TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS media_skips_open ON media_skips(segment_id) WHERE ended IS NULL;
+CREATE INDEX IF NOT EXISTS media_skips_batch ON media_skips(batch_id);
+CREATE TRIGGER IF NOT EXISTS media_skips_never_delete BEFORE DELETE ON media_skips
+BEGIN SELECT RAISE(ABORT, 'ramblr: media skip records are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS bookmarks_never_delete BEFORE DELETE ON bookmarks
 BEGIN SELECT RAISE(ABORT, 'ramblr: bookmarks are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS action_items_never_delete BEFORE DELETE ON action_items
@@ -343,7 +358,8 @@ def migrate(db):
             ("ideas", "last_mention", "REAL"), ("ideas", "repo_url", "TEXT"), ("ideas", "shipped_at", "REAL"),
             ("action_items", "done_at", "REAL"), ("uploads", "attempts", "INTEGER NOT NULL DEFAULT 0"),
             ("media_windows", "source", "TEXT"), ("media_tracks", "source", "TEXT"),
-            ("command_intents", "voice_hold", "INTEGER NOT NULL DEFAULT 0"), ("command_intents", "fred_approved", "INTEGER NOT NULL DEFAULT 0")]
+            ("command_intents", "voice_hold", "INTEGER NOT NULL DEFAULT 0"), ("command_intents", "fred_approved", "INTEGER NOT NULL DEFAULT 0"),
+            ("media_corrections", "undone_at", "REAL")]
     for table, col, decl in adds:
         if col not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
             try:
@@ -419,8 +435,9 @@ def blob_to_vec(b):
 def voiceprints(db):
     """[(speaker_id, centroid)] for every live speaker with a voiceprint (merged speakers excluded)."""
     out = []
+    # n=0: every sample was taken out (a media line unlabelled, an undo); the leftover float dust is not a voice
     for r in db.execute("SELECT v.speaker_id, v.vec_sum FROM voiceprints v JOIN speakers s ON s.id=v.speaker_id "
-                        "WHERE s.merged_into IS NULL"):
+                        "WHERE s.merged_into IS NULL AND v.n>0"):
         s = blob_to_vec(r["vec_sum"])
         nrm = np.linalg.norm(s)
         if nrm > 0:

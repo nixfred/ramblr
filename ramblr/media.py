@@ -11,8 +11,9 @@
    a training example: the weights are refit on every correction, pulled toward the hand-set prior.
 
 segments.media: NULL = not decided yet, 0 = talk, 1 = media (auto), 2 = media (marked by hand), -1 = talk (marked
-by hand). Lines are never deleted; media lines keep their text and are only left out of the transcript view,
-idea detection, action items, summaries and Ask."""
+by hand). Lines are never deleted; media lines keep their text and are only left out of the transcript view (one
+"Media skipped" row), idea detection, action items, summaries, search, exports and Ask. They carry no speaker and
+never teach a voiceprint (mediaskip.py, Fred 2026-10-25)."""
 import json
 import logging
 import os
@@ -221,19 +222,28 @@ def features(db, seg):
     if tot:
         for k in ("music", "tv", "crowd", "narration"):
             f[k] = round(f[k] / tot, 4)
+    sp_id, cl_id = seg["speaker_id"], seg["cluster_id"]
+    voice = bool(sp_id or cl_id)
+    if "voice" in seg.keys():                  # the diarizer asking before it labels: the voice it would pick
+        voice = voice or bool(seg["voice"])
+    elif not voice:
+        from . import mediaskip                # a media line keeps no speaker: judge it by the voice it had (or would)
+        v = mediaskip.voice_of(db, seg["id"])
+        if v:
+            sp_id, cl_id, voice = v
     sp = None
-    if seg["speaker_id"]:
-        sp = db.execute("SELECT named, confirmed FROM speakers WHERE id=?", (seg["speaker_id"],)).fetchone()
+    if sp_id:
+        sp = db.execute("SELECT named, confirmed FROM speakers WHERE id=?", (sp_id,)).fetchone()
     if sp and sp["named"]:
         f["known"] = 1.0                       # Fred or another known voice: talking over the TV is still talk
-    elif seg["speaker_id"] or seg["cluster_id"]:
+    elif voice:
         f["unknown"] = 1.0
-        c = seg["cluster_id"] or seg["speaker_id"]
+        c = cl_id or sp_id
         # Fred's own labels only (2 = TV, -1 = talk), same mic only: counting auto tags let a room-average cluster
         # feed on its own mistakes (2026-10-24: 27 of 40 family-talk lines hidden by this feature alone)
         r = db.execute("""SELECT COUNT(*) n, SUM(CASE WHEN media=2 THEN 1 ELSE 0 END) m FROM segments
-                          WHERE (cluster_id=? OR speaker_id=?) AND source IS ? AND media IN (2,-1) AND id<>?
-                          AND id IN (SELECT segment_id FROM media_corrections)""", (c, c, src, seg["id"])).fetchone()   # clicks, not spreads
+                          WHERE (cluster_id=? OR speaker_id=? OR id IN (SELECT segment_id FROM media_skips WHERE ended IS NULL AND cluster_id=?)) AND source IS ? AND media IN (2,-1) AND id<>?
+                          AND id IN (SELECT segment_id FROM media_corrections WHERE undone_at IS NULL)""", (c, c, c, src, seg["id"])).fetchone()   # clicks, not spreads
         if r["n"] >= 5:
             f["unknown_media_ratio"] = (r["m"] or 0) / r["n"]   # a voice Fred has mostly marked as TV
     return f
@@ -312,7 +322,15 @@ def tag_pending(db, until, source=None):
         db.execute("UPDATE segments SET media=?, media_p=? WHERE id=? AND media IS NULL", (m, round(p, 3), s["id"]))
         if m:
             changed.append(s["id"])
+    sync(db, changed, "tag")
     return changed
+
+
+def sync(db, ids, why):
+    """Media lines carry no speaker (mediaskip): take it off lines that became media, give one back to talk again."""
+    if ids:
+        from . import mediaskip
+        mediaskip.sync(db, ids, why)
 
 
 def retag(db, ids):
@@ -330,6 +348,7 @@ def retag(db, ids):
         if m != s["media"]:   # only if still the automatic value we read: a manual flag set meanwhile always wins
             if db.execute("UPDATE segments SET media=?, media_p=? WHERE id=? AND media=?", (m, round(p, 3), s["id"], s["media"])).rowcount:
                 changed.append(s["id"])
+    sync(db, changed, "retag")
     return changed
 
 
@@ -359,6 +378,7 @@ def correct(db, ids, is_media, who="site"):
         out["spread"] = spread(db, ids, out["batch"], who)
         if not out["spread"]:
             out["batch"] = None
+    sync(db, ids + out["spread"], "mark")      # TV: no speaker; "not media" (-1): diarized afresh for real labels
     return out
 
 
@@ -398,7 +418,8 @@ def spread(db, seed_ids, batch, who="site"):
                 if not cast:
                     if p < SPREAD_FLOOR or abs(p - sp) > SPREAD_SIMILAR:
                         break                               # no longer looks like the same source
-                    if q["cluster_id"] and prev["cluster_id"] and q["cluster_id"] != prev["cluster_id"] and p < 0.5:
+                    qc, pc = _cluster(db, q), _cluster(db, prev)
+                    if qc and pc and qc != pc and p < 0.5:
                         break                               # a different voice that does not look like media itself
                 if q["id"] not in done and q["media"] != 2:
                     if db.execute("UPDATE segments SET media=2, media_p=? WHERE id=? AND media IS ?", (round(p, 3), q["id"], q["media"])).rowcount:
@@ -410,6 +431,15 @@ def spread(db, seed_ids, batch, who="site"):
     return marked
 
 
+def _cluster(db, r):
+    """A line's diarizer cluster; for a media line (no speaker kept) the cluster it had or would have had."""
+    if r["cluster_id"]:
+        return r["cluster_id"]
+    from . import mediaskip
+    v = mediaskip.voice_of(db, r["id"])
+    return v[1] if v else None
+
+
 def undo_spread(db, batch):
     """Put every line of one spread batch back exactly as it was (only if nobody changed it since). Returns the ids."""
     back = []
@@ -418,6 +448,7 @@ def undo_spread(db, batch):
         if db.execute("UPDATE segments SET media=? WHERE id=? AND media=2", (old, a["segment_id"])).rowcount:
             back.append(a["segment_id"])
         db.execute("UPDATE audit SET undone_at=? WHERE id=?", (time.time(), a["id"]))
+    sync(db, back, "undo")
     return back
 
 
@@ -425,8 +456,8 @@ def fit(db):
     """Logistic regression on all corrections, L2-regularised toward the hand-set prior (few examples cannot
     swing it wildly). Plain numpy gradient descent: a few hundred examples at most."""
     # the latest correction per line wins (Fred flipping a line back must not leave both labels fighting)
-    rows = db.execute("""SELECT c.segment_id, c.label, c.features FROM media_corrections c
-                         WHERE c.id = (SELECT MAX(id) FROM media_corrections WHERE segment_id=c.segment_id)""").fetchall()
+    rows = db.execute("""SELECT c.segment_id, c.label, c.features FROM media_corrections c   -- an undone click teaches nothing
+                         WHERE c.id = (SELECT MAX(id) FROM media_corrections WHERE segment_id=c.segment_id AND undone_at IS NULL)""").fetchall()
     keys = ["bias"] + FEATURES
     prior = np.array([PRIOR[k] for k in keys])
     w = prior.copy()

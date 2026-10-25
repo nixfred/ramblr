@@ -218,8 +218,8 @@ def _propagate(db, src, to, parent, who):
         _audit(db, batch, "cluster_map", who, frm=cl, to=to, parent=parent, detail={"cluster": cl})
     rows = db.execute(f"""SELECT s.id, s.ts, s.text, s.speaker_id, s.cluster_id, s.emb_id, e.vec, sp.named AS cur_named
                           FROM segments s LEFT JOIN embeddings e ON e.id=s.emb_id LEFT JOIN speakers sp ON sp.id=s.speaker_id
-                          WHERE s.day=? AND s.id<>? AND s.manual=0 AND s.noise=0
-                            AND (s.speaker_id IS NULL OR s.speaker_id<>?) ORDER BY s.ts""",
+                          WHERE s.day=? AND s.id<>? AND s.manual=0 AND s.noise=0 AND COALESCE(s.media,0) NOT IN (1,2)
+                            AND (s.speaker_id IS NULL OR s.speaker_id<>?) ORDER BY s.ts""",   # media lines carry no speaker
                       (src["day"], src["id"], to)).fetchall()
     cents = {}
     for r in rows:

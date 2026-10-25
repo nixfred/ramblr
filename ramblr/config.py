@@ -59,6 +59,9 @@ MERGE_FLOOR = float(os.environ.get("RAMBLR_MERGE_FLOOR", 0.80))
 SPK_MIN_SECONDS = float(os.environ.get("RAMBLR_SPK_MIN_SECONDS", 1.2))
 DIAR_INTERVAL = float(os.environ.get("RAMBLR_DIAR_INTERVAL", 5))
 DIAR_BATCH = int(os.environ.get("RAMBLR_DIAR_BATCH", 40))
+# mediaskip: the diarizer waits this long for a line's media tag (the classifier hears a few seconds past the line), so a
+# TV line is never labelled or learned from first; after it, an untagged line is diarized as talk (classifier down)
+DIAR_MEDIA_WAIT = float(os.environ.get("RAMBLR_DIAR_MEDIA_WAIT", 90))
 
 CONFIG_DIR = Path(os.environ.get("RAMBLR_CONFIG", HOME / ".config/ramblr"))
 

@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
 from . import presence as presmod
-from . import config, db as dbm, doit, ideas as ideasmod, media as mediamod, mics as micmod, mockups as mockmod, speakers as spk, state
+from . import config, db as dbm, doit, ideas as ideasmod, media as mediamod, mediaskip, mics as micmod, mockups as mockmod, speakers as spk, state
 
 HERE = Path(__file__).parent
 BRAND = HERE.parent / "assets" / "brand"
@@ -134,8 +134,12 @@ def speakers():
 
 @app.get("/api/segments")
 def segments(day: str = "", after_id: int = 0, q: str = "", start: str = "", end: str = "", noise: int = 0, limit: int = 20000,
-             tail: int = 0):
+             tail: int = 0, media: int = -1):
+    """media: 1 = include TV / music lines, 0 = leave them out, -1 (default) = include them for the day view (they fold
+    into 'Media skipped' rows) but leave them out of a search (q)."""
     where, args = [], []
+    if media == 0 or (media == -1 and q.strip()):
+        where.append("COALESCE(s.media,0) NOT IN (1,2)")
     if after_id:
         where.append("s.id > ?"); args.append(after_id)
     if day:
@@ -159,8 +163,8 @@ def segments(day: str = "", after_id: int = 0, q: str = "", start: str = "", end
 
 
 @app.get("/api/export", response_class=PlainTextResponse)
-def export(start: str, end: str, noise: int = 0):
-    rs = segments(start=start, end=end, noise=noise)
+def export(start: str, end: str, noise: int = 0, media: int = 0):
+    rs = segments(start=start, end=end, noise=noise, media=media)      # media lines are skipped unless media=1
     return "\n".join(f"[{r['t']}] {r['speaker']}: {r['text']}" for r in rs)
 
 
@@ -245,10 +249,21 @@ async def mark_media(request: Request):
         ids = [x["id"] for x in segments(start=body["start"], end=body["end"], noise=0)]
     if not ids:
         raise HTTPException(400, "no lines selected")
-    out = run_op(lambda: mediamod.correct(db(), ids, bool(body.get("media", True)), who_from(request)))
+    if body.get("media", True):
+        out = run_op(lambda: mediamod.correct(db(), ids, True, who_from(request)))
+    else:       # NOT MEDIA: talk again, and diarized afresh so the lines get real speaker labels; "undo" undoes it all
+        out = run_op(lambda: mediaskip.not_media(db(), ids, who_from(request)))
     if out.get("spread"):
         hub.publish("upd", {"ids": out["spread"]})
     return out
+
+
+@app.post("/api/media/notmedia/undo")
+async def not_media_undo(request: Request):
+    """Undo one NOT MEDIA click: media flags, the speakers the lines had (none) and the classifier go back."""
+    body = await request.json()
+    back = run_op(lambda: {"restored": len(mediaskip.undo_not_media(db(), str(body.get("batch", ""))[:32], who_from(request)))})
+    return back
 
 
 @app.post("/api/media/spread/undo")
@@ -1153,13 +1168,14 @@ def md_escape(t):
 
 
 @app.get("/api/export.md", response_class=PlainTextResponse)
-def export_md(day: str = "", start: str = "", end: str = "", noise: int = 0):
-    """Markdown of a day or a time range (local times), with that day's recap and action items."""
+def export_md(day: str = "", start: str = "", end: str = "", noise: int = 0, media: int = 0):
+    """Markdown of a day or a time range (local times), with that day's recap and action items. TV / music lines are
+    left out unless media=1."""
     if day:
-        rs = segments(day=day, noise=noise)
+        rs = segments(day=day, noise=noise, media=media)
         title, fname = f"Ramblr: {day}", f"ramblr-{day}.md"
     elif start and end:
-        rs = segments(start=start, end=end, noise=noise)
+        rs = segments(start=start, end=end, noise=noise, media=media)
         title, fname = f"Ramblr: {start} to {end}", f"ramblr-{start.replace(':', '')}-{end.replace(':', '')}.md".replace(" ", "_")
     else:
         raise HTTPException(400, "give day=YYYY-MM-DD or start= and end=")
@@ -1668,8 +1684,12 @@ async def create_idea(request: Request):
     d = db()
     ids = body.get("segment_ids")
     if not ids:
-        rs = segments(start=body.get("start", ""), end=body.get("end", ""), noise=0)
+        rs = segments(start=body.get("start", ""), end=body.get("end", ""), noise=0, media=0)
         ids = [x["id"] for x in rs]
+    else:       # a selection that swept over a 'Media skipped' row: the TV lines stay out of the idea
+        ph = ",".join("?" * len(ids))
+        ids = [r[0] for r in d.execute(f"SELECT id FROM segments WHERE id IN ({ph}) AND COALESCE(media,0) NOT IN (1,2)",
+                                       [int(i) for i in ids])]
     if not ids:
         raise HTTPException(400, "no lines in that selection")
     try:
